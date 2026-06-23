@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>发票列表 — 发票管家</title>
+  <link rel="stylesheet" href="../css/tokens.css" />
+  <style>
+    .app-shell {
+      max-width: 1200px; margin: 0 auto;
+      padding: var(--space-lg) var(--space-lg) var(--space-3xl);
+      display: flex; flex-direction: column; gap: var(--space-lg);
+    }
+    .top-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding-bottom: var(--space-md); border-bottom: 1px solid var(--border);
+      flex-wrap: wrap; gap: var(--space-md);
+    }
+    .top-bar .breadcrumb { display: flex; align-items: center; gap: var(--space-sm); font-size: 0.8125rem; color: var(--muted); }
+    .top-bar .breadcrumb a { color: var(--accent-text); text-decoration: none; }
+    .top-bar .breadcrumb a:hover { text-decoration: underline; }
+
+    /* 筛选栏 */
+    .filter-bar {
+      display: flex; gap: var(--space-sm); flex-wrap: wrap; align-items: center;
+    }
+    .filter-bar .input { max-width: 260px; }
+    .filter-bar select { max-width: 140px; }
+    .filter-bar .filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+    .filter-pill {
+      padding: 5px 14px; border-radius: var(--radius-full);
+      border: 1px solid var(--border); background: var(--surface);
+      font-size: 0.8125rem; cursor: pointer; transition: all var(--duration) var(--ease);
+      letter-spacing: 0.02em; white-space: nowrap;
+    }
+    .filter-pill:hover { background: var(--hover); }
+    .filter-pill.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+    /* 列表 */
+    .list-header {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .list-count { font-size: 0.8125rem; color: var(--muted); }
+
+    .invoice-row {
+      display: flex; align-items: center; gap: var(--space-md);
+      padding: 14px var(--space-lg); background: var(--surface);
+      border-bottom: 1px solid var(--border-light);
+      cursor: pointer; transition: background var(--duration) var(--ease);
+    }
+    .invoice-row:hover { background: var(--hover); }
+    .invoice-row .ir-check { flex-shrink: 0; }
+    .invoice-row .ir-id { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); min-width: 100px; }
+    .invoice-row .ir-seller { flex: 1; min-width: 0; font-weight: 510; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .invoice-row .ir-date { font-size: 0.8125rem; color: var(--muted); min-width: 80px; text-align: center; }
+    .invoice-row .ir-amount { font-family: var(--font-mono); font-weight: 590; min-width: 100px; text-align: right; }
+    .invoice-row .ir-status { min-width: 72px; text-align: center; }
+
+    /* 批量操作栏 */
+    .batch-bar {
+      display: flex; align-items: center; gap: var(--space-md);
+      padding: 10px var(--space-lg); background: var(--accent-light);
+      border-radius: var(--radius-md); border: 1px solid var(--accent);
+      font-size: 0.8125rem;
+    }
+    .batch-bar.hidden { display: none; }
+
+    /* 分页 */
+    .pagination {
+      display: flex; align-items: center; justify-content: center; gap: var(--space-sm);
+      padding-top: var(--space-md);
+    }
+    .pagination .page-btn {
+      width: 36px; height: 36px; border-radius: var(--radius-md);
+      border: 1px solid var(--border); background: var(--surface);
+      font-size: 0.8125rem; cursor: pointer;
+      display: grid; place-items: center;
+    }
+    .pagination .page-btn:hover { background: var(--hover); }
+    .pagination .page-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+    /* 移动端表格改为卡片 */
+    @media (max-width: 768px) {
+      .app-shell { padding: var(--space-md); gap: var(--space-md); }
+      .invoice-row { flex-wrap: wrap; gap: var(--space-sm); padding: 12px var(--space-md); }
+      .invoice-row .ir-seller { flex: 1 1 100%; }
+      .invoice-row .ir-id { min-width: auto; }
+      .filter-bar { flex-direction: column; align-items: stretch; }
+      .filter-bar .input, .filter-bar select { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell animate-in">
+
+    <!-- 顶栏 -->
+    <div class="top-bar">
+      <div class="breadcrumb">
+        <a href="../index.html">发票管家</a>
+        <span style="color:var(--border);">›</span>
+        <span>发票列表</span>
+      </div>
+      <a href="invoice-add.html" class="btn btn-primary btn-sm">+ 录入发票</a>
+      <a href="#" class="btn btn-sm" onclick="exportCSV();return false;">📥 导出 CSV</a>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="filter-bar" id="filter-bar" data-od-id="filter-bar">
+      <input type="text" class="input" id="search-input" placeholder="搜索发票号/销售方/备注…" />
+      <select class="input select" id="filter-status" style="max-width:120px;">
+        <option value="all">全部状态</option>
+        <option value="pending">待报销</option>
+        <option value="reimbursed">已报销</option>
+        <option value="rejected">已退回</option>
+      </select>
+      <select class="input select" id="filter-category" style="max-width:120px;">
+        <option value="all">全部类别</option>
+        <option value="service">技术服务</option>
+        <option value="travel">差旅交通</option>
+        <option value="catering">餐饮招待</option>
+        <option value="office">办公用品</option>
+        <option value="utility">水电物业</option>
+        <option value="logistics">物流快递</option>
+        <option value="rental">房租租赁</option>
+        <option value="other">其他</option>
+      </select>
+      <select class="input select" id="sort-by" style="max-width:120px;">
+        <option value="date-desc">日期最新</option>
+        <option value="date-asc">日期最早</option>
+        <option value="amount-desc">金额最高</option>
+        <option value="amount-asc">金额最低</option>
+      </select>
+    </div>
+
+    <!-- 批量操作栏 -->
+    <div class="batch-bar hidden" id="batch-bar">
+      <span id="batch-count">已选 0 项</span>
+      <button class="btn btn-sm" onclick="batchApprove()">批量报销</button>
+      <button class="btn btn-sm" style="color:var(--danger);" onclick="batchReject()">批量退回</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearSelection()">取消选择</button>
+    </div>
+
+    <!-- 列表 -->
+    <div data-od-id="invoice-list">
+      <div class="list-header" style="margin-bottom: var(--space-sm);">
+        <span class="list-count" id="list-count">共 0 条</span>
+      </div>
+      <div class="card" style="padding:0; overflow:hidden;" id="list-container">
+        <div class="empty-state" id="empty-state" style="display:none;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="8" y1="3" x2="8" y2="21"/></svg>
+          <p>没有匹配的发票记录</p>
+        </div>
+        <div id="invoice-rows"></div>
+      </div>
+    </div>
+
+    <!-- 分页 -->
+    <div class="pagination" id="pagination"></div>
+  </div>
+
+  <script src="../js/auth.js"></script>
+  <script>
+    // ===== 数据层：从后端 API 加载 =====
+    var currentData = [];
+    var totalCount = 0;
+    var totalPages = 1;
+    var selectedIds = new Set();
+    var pageSize = 15;
+    var currentPage = 1;
+
+    var API = '/api/invoices';
+
+    var catNames = {
+      service:'技术服务', travel:'差旅交通', catering:'餐饮招待',
+      office:'办公用品', utility:'水电物业', logistics:'物流快递',
+      rental:'房租租赁', other:'其他'
+    };
+    var statusNames = { pending:'待报销', reimbursed:'已报销', rejected:'已退回' };
+    var statusBadges = { pending:'badge-warn', reimbursed:'badge-success', rejected:'badge-danger' };
+
+    // ===== 从 API 获取数据 =====
+    function fetchInvoices() {
+      var search = document.getElementById('search-input').value || '';
+      var status = document.getElementById('filter-status').value;
+      var category = document.getElementById('filter-category').value;
+      var sort = document.getElementById('sort-by').value;
+
+      var params = new URLSearchParams({
+        page: currentPage,
+        limit: pageSize,
+        sort: sort
+      });
+      if (search) params.set('search', search);
+      if (status !== 'all') params.set('status', status);
+      if (category !== 'all') params.set('category', category);
+
+      fetch(API + '?' + params.toString())
+        .then(function(r) { if (!r.ok) throw new Error('API error'); return r.json(); })
+        .then(function(result) {
+          currentData = result.data;
+          totalCount = result.total;
+          totalPages = result.totalPages;
+          renderList();
+          renderPagination();
+        })
+        .catch(function() {
+          document.getElementById('invoice-rows').innerHTML =
+            '<div class="empty-state"><p>无法连接后端服务，请确认已启动 server.js</p></div>';
+        });
+    }
+
+    // ===== 渲染列表 =====
+    function renderList() {
+      var container = document.getElementById('invoice-rows');
+      var empty = document.getElementById('empty-state');
+      var countEl = document.getElementById('list-count');
+
+      countEl.textContent = '共 ' + totalCount + ' 条';
+
+      if (currentData.length === 0) {
+        container.innerHTML = '';
+        empty.style.display = 'flex';
+        return;
+      }
+      empty.style.display = 'none';
+
+      container.innerHTML = currentData.map(function(inv) {
+        var checked = selectedIds.has(inv.id) ? 'checked' : '';
+        return '<div class="invoice-row" onclick="goDetail(\'' + inv.id + '\')">' +
+          '<div class="ir-check" onclick="event.stopPropagation();"><input type="checkbox" ' + checked + ' onchange="toggleSelect(\'' + inv.id + '\', this.checked)" /></div>' +
+          '<div class="ir-id">' + inv.id + '</div>' +
+          '<div class="ir-seller" title="' + inv.seller + '">' + inv.seller + '</div>' +
+          '<div class="text-xs text-muted hide-mobile" style="min-width:72px;text-align:center;">' + (catNames[inv.category] || inv.category) + '</div>' +
+          '<div class="ir-date">' + inv.date + '</div>' +
+          '<div class="ir-amount">¥' + inv.totalAmount.toLocaleString('zh-CN', {minimumFractionDigits:2}) + '</div>' +
+          '<div class="ir-status"><span class="badge ' + (statusBadges[inv.status] || '') + '">' + (statusNames[inv.status] || inv.status) + '</span></div>' +
+          '</div>';
+      }).join('');
+    }
+
+    function renderPagination() {
+      var el = document.getElementById('pagination');
+      if (totalPages <= 1) { el.innerHTML = ''; return; }
+      var html = '<button class="page-btn" onclick="goPage(' + (currentPage-1) + ')"' + (currentPage<=1?' disabled':'') + '>‹</button>';
+      for (var i = 1; i <= totalPages; i++) {
+        html += '<button class="page-btn' + (i===currentPage?' active':'') + '" onclick="goPage(' + i + ')">' + i + '</button>';
+      }
+      html += '<button class="page-btn" onclick="goPage(' + (currentPage+1) + ')"' + (currentPage>=totalPages?' disabled':'') + '>›</button>';
+      el.innerHTML = html;
+    }
+
+    function goPage(n) {
+      currentPage = Math.max(1, Math.min(totalPages, n));
+      fetchInvoices();
+    }
+
+    // ===== 选择与批量操作（通过 API） =====
+    function toggleSelect(id, checked) {
+      if (checked) selectedIds.add(id); else selectedIds.delete(id);
+      updateBatchBar();
+    }
+    function clearSelection() { selectedIds.clear(); fetchInvoices(); updateBatchBar(); }
+    function updateBatchBar() {
+      var bar = document.getElementById('batch-bar');
+      var countEl = document.getElementById('batch-count');
+      if (selectedIds.size > 0) {
+        bar.classList.remove('hidden');
+        countEl.textContent = '已选 ' + selectedIds.size + ' 项';
+      } else {
+        bar.classList.add('hidden');
+      }
+    }
+    function batchUpdateStatus(status) {
+      var ids = Array.from(selectedIds);
+      if (!ids.length) return;
+      fetch('/api/invoices/batch-status', {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ids: ids, status: status })
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(result) {
+          selectedIds.clear();
+          updateBatchBar();
+          fetchInvoices();
+        })
+        .catch(function() { alert('批量操作失败，请确认后端服务已启动'); });
+    }
+    function batchApprove() { batchUpdateStatus('reimbursed'); }
+    function batchReject() { batchUpdateStatus('rejected'); }
+
+    function goDetail(id) {
+      window.location.href = 'invoice-detail.html?id=' + id;
+    }
+
+    // 绑定筛选事件（防抖搜索）
+    var searchTimer;
+    document.getElementById('search-input').addEventListener('input', function() {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(function() { currentPage = 1; fetchInvoices(); }, 300);
+    });
+    document.getElementById('filter-status').addEventListener('change', function() { currentPage = 1; fetchInvoices(); });
+    document.getElementById('filter-category').addEventListener('change', function() { currentPage = 1; fetchInvoices(); });
+    document.getElementById('sort-by').addEventListener('change', function() { currentPage = 1; fetchInvoices(); });
+
+    // URL 参数预筛选
+    var params = new URLSearchParams(window.location.search);
+    var presetStatus = params.get('status');
+    if (presetStatus) {
+      document.getElementById('filter-status').value = presetStatus;
+    }
+
+    // 初始加载
+    fetchInvoices();
+
+    function exportCSV() { window.open('/api/invoices/export', '_blank'); }
+  </script>
+</body>
+</html>

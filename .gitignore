@@ -1,0 +1,10 @@
+node_modules/
+db/*.db
+db/*.db-wal
+db/*.db-shm
+*.exe
+data.json.bak
+dist/db/
+*.artifact.json
+config.json
+data/

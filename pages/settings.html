@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>系统设置 — 发票管家</title>
+  <link rel="stylesheet" href="../css/tokens.css" />
+  <script src="../js/auth.js"></script>
+  <style>
+    .settings-shell { max-width: 680px; margin: 0 auto; padding: var(--space-2xl) var(--space-lg); }
+    h2 { margin-bottom: var(--space-lg); }
+    .setting-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: var(--space-xl); margin-bottom: var(--space-lg);
+    }
+    .setting-card h3 { margin-bottom: var(--space-md); padding-bottom: var(--space-sm); border-bottom: 1px solid var(--border-light); }
+    .form-row { display: grid; grid-template-columns: 120px 1fr; gap: var(--space-md); align-items: center; margin-bottom: var(--space-md); }
+    .form-row label { font-size: 0.875rem; font-weight: 510; text-align: right; }
+    .form-row .hint { grid-column: 2; font-size: 0.75rem; color: var(--muted); margin-top: -8px; }
+    .form-actions { display: flex; gap: var(--space-md); margin-top: var(--space-lg); }
+    .status-msg { padding: 8px 14px; border-radius: var(--radius-md); font-size: 0.875rem; margin-top: var(--space-md); display: none; }
+    .status-msg.success { background: var(--success-bg); color: var(--success); display: block; }
+    .status-msg.error { background: var(--danger-bg); color: var(--danger); display: block; }
+  </style>
+</head>
+<body>
+  <div class="settings-shell">
+    <h2>系统设置</h2>
+
+    <div class="setting-card">
+      <h3>🤖 AI 大模型配置</h3>
+      <div class="form-row">
+        <label>服务商</label>
+        <select class="input select" id="ai-provider">
+          <option value="openai">OpenAI 兼容</option>
+          <option value="anthropic">Anthropic Claude</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>API 地址</label>
+        <input type="text" class="input" id="ai-baseurl" placeholder="https://api.openai.com/v1" />
+        <span class="hint">OpenAI 默认：https://api.openai.com/v1 | 自定义代理填入你的地址</span>
+      </div>
+      <div class="form-row">
+        <label>API 令牌</label>
+        <input type="password" class="input" id="ai-apikey" placeholder="sk-..." />
+        <span class="hint">以 sk- 开头的令牌，在服务商后台获取</span>
+      </div>
+      <div class="form-row">
+        <label>模型名称</label>
+        <input type="text" class="input" id="ai-model" placeholder="gpt-4o" />
+        <span class="hint">如 gpt-4o、claude-sonnet-4-20250514、deepseek-chat 等</span>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="saveAIConfig()">保存 AI 配置</button>
+        <button class="btn" onclick="testAIConnection()">测试连接</button>
+      </div>
+      <div class="status-msg" id="ai-status"></div>
+    </div>
+
+    <div class="setting-card">
+      <h3>👤 账号信息</h3>
+      <div class="form-row">
+        <label>当前用户</label>
+        <span id="settings-user" style="font-weight:510;">—</span>
+      </div>
+      <div class="form-row">
+        <label>默认管理员</label>
+        <span class="text-muted">admin / admin123</span>
+      </div>
+    </div>
+
+    <div class="setting-card">
+      <h3>ℹ️ 关于</h3>
+      <div class="form-row"><label>版本</label><span>v4.0 — 全系统 AI 集成</span></div>
+      <div class="form-row"><label>数据库</label><span>SQLite（Node.js 内置）</span></div>
+      <div class="form-row"><label>设计</label><span>苏式AI美学</span></div>
+    </div>
+  </div>
+
+  <script>
+    // 加载当前配置
+    fetch('/api/config').then(r => r.json()).then(c => {
+      if (c.ai) {
+        document.getElementById('ai-provider').value = c.ai.provider || 'openai';
+        document.getElementById('ai-baseurl').value = c.ai.baseUrl || '';
+        document.getElementById('ai-apikey').value = c.ai.apiKey || '';
+        document.getElementById('ai-model').value = c.ai.model || 'gpt-4o';
+      }
+    }).catch(() => {});
+
+    // 显示当前用户名
+    var u = localStorage.getItem('username');
+    if (u) document.getElementById('settings-user').textContent = u;
+
+    function showStatus(id, msg, type) {
+      var el = document.getElementById(id);
+      el.textContent = msg;
+      el.className = 'status-msg ' + type;
+      setTimeout(() => el.className = 'status-msg', 4000);
+    }
+
+    function saveAIConfig() {
+      var data = {
+        provider: document.getElementById('ai-provider').value,
+        baseUrl: document.getElementById('ai-baseurl').value.trim(),
+        apiKey: document.getElementById('ai-apikey').value.trim(),
+        model: document.getElementById('ai-model').value.trim(),
+        maxTokens: 800
+      };
+      fetch('/api/config', {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ai: data })
+      }).then(r => r.json()).then(res => {
+        if (res.ok) showStatus('ai-status', '✅ AI 配置已保存，重启服务生效', 'success');
+        else showStatus('ai-status', '❌ 保存失败: ' + (res.error || ''), 'error');
+      }).catch(() => showStatus('ai-status', '❌ 保存失败，请确认服务已启动', 'error'));
+    }
+
+    function testAIConnection() {
+      var key = document.getElementById('ai-apikey').value.trim();
+      if (!key) { showStatus('ai-status', '⚠️ 请先填入 API 令牌', 'error'); return; }
+      showStatus('ai-status', '⏳ 正在测试连接…', 'success');
+      fetch('/api/ai/test', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          provider: document.getElementById('ai-provider').value,
+          baseUrl: document.getElementById('ai-baseurl').value.trim(),
+          apiKey: key,
+          model: document.getElementById('ai-model').value.trim()
+        })
+      }).then(r => r.json()).then(res => {
+        if (res.ok) showStatus('ai-status', '✅ 连接成功！模型响应正常', 'success');
+        else showStatus('ai-status', '❌ 连接失败: ' + (res.error || '未知错误'), 'error');
+      }).catch(() => showStatus('ai-status', '❌ 测试请求失败', 'error'));
+    }
+  </script>
+</body>
+</html>

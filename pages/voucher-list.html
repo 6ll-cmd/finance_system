@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>凭证列表 — 发票管家</title>
+  <link rel="stylesheet" href="../css/tokens.css" />
+  <style>
+    .app-shell {
+      max-width: 1100px; margin: 0 auto;
+      padding: var(--space-lg) var(--space-lg) var(--space-3xl);
+      display: flex; flex-direction: column; gap: var(--space-lg);
+    }
+    .top-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding-bottom: var(--space-md); border-bottom: 1px solid var(--border);
+      flex-wrap: wrap; gap: var(--space-md);
+    }
+    .top-bar .breadcrumb { display: flex; align-items: center; gap: var(--space-sm); font-size: 0.8125rem; color: var(--muted); }
+    .top-bar .breadcrumb a { color: var(--accent-text); text-decoration: none; }
+    .top-bar .breadcrumb a:hover { text-decoration: underline; }
+
+    .filter-bar { display: flex; gap: var(--space-sm); flex-wrap: wrap; align-items: center; }
+    .filter-bar .input { max-width: 260px; }
+    .filter-bar select { max-width: 140px; }
+
+    .list-count { font-size: 0.8125rem; color: var(--muted); }
+
+    .voucher-row {
+      display: flex; align-items: center; gap: var(--space-md);
+      padding: 14px var(--space-lg); background: var(--surface);
+      border-bottom: 1px solid var(--border-light);
+      cursor: pointer; transition: background var(--duration) var(--ease);
+    }
+    .voucher-row:hover { background: var(--hover); }
+    .voucher-row .vr-id { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); min-width: 100px; }
+    .voucher-row .vr-desc { flex: 1; min-width: 0; font-weight: 510; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .voucher-row .vr-date { font-size: 0.8125rem; color: var(--muted); min-width: 80px; text-align: center; }
+    .voucher-row .vr-amount { font-family: var(--font-mono); font-weight: 590; min-width: 100px; text-align: right; white-space: nowrap; }
+    .voucher-row .vr-status { min-width: 72px; text-align: center; }
+
+    .pagination { display: flex; align-items: center; justify-content: center; gap: var(--space-sm); padding-top: var(--space-md); }
+    .page-btn {
+      width: 36px; height: 36px; border-radius: var(--radius-md);
+      border: 1px solid var(--border); background: var(--surface);
+      font-size: 0.8125rem; cursor: pointer; display: grid; place-items: center;
+    }
+    .page-btn:hover { background: var(--hover); }
+    .page-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+    .page-btn:disabled { opacity: 0.3; cursor: default; }
+
+    @media (max-width: 768px) {
+      .app-shell { padding: var(--space-md); gap: var(--space-md); }
+      .voucher-row { flex-wrap: wrap; gap: var(--space-sm); padding: 12px var(--space-md); }
+      .voucher-row .vr-desc { flex: 1 1 100%; }
+      .filter-bar { flex-direction: column; align-items: stretch; }
+      .filter-bar .input, .filter-bar select { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell animate-in">
+
+    <div class="top-bar">
+      <div class="breadcrumb">
+        <a href="../index.html">发票管家</a>
+        <span style="color:var(--border);">›</span>
+        <span>凭证列表</span>
+      </div>
+      <a href="voucher-add.html" class="btn btn-primary btn-sm">+ 新增凭证</a>
+    </div>
+
+    <div class="filter-bar" data-od-id="filter-bar">
+      <input type="text" class="input" id="search-input" placeholder="搜索凭证号/摘要…" />
+      <select class="input select" id="filter-status" style="max-width:130px;">
+        <option value="all">全部状态</option>
+        <option value="draft">草稿</option>
+        <option value="posted">已过账</option>
+        <option value="cancelled">已作废</option>
+      </select>
+    </div>
+
+    <div data-od-id="voucher-list">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-sm);">
+        <span class="list-count" id="list-count">共 0 条</span>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden;" id="list-container">
+        <div class="empty-state" id="empty-state" style="display:none;">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="8" y1="3" x2="8" y2="21"/></svg>
+          <p>暂无凭证记录</p>
+        </div>
+        <div id="voucher-rows"></div>
+      </div>
+    </div>
+
+    <div class="pagination" id="pagination"></div>
+  </div>
+
+  <script src="../js/auth.js"></script>
+  <script>
+    var currentData = [], totalCount = 0, totalPages = 1, currentPage = 1;
+    var statusNames = { draft:'草稿', posted:'已过账', cancelled:'已作废' };
+    var statusBadges = { draft:'badge-info', posted:'badge-success', cancelled:'badge-danger' };
+
+    function fetchVouchers() {
+      var params = new URLSearchParams({ page: currentPage, limit: 15 });
+      var search = document.getElementById('search-input').value;
+      var status = document.getElementById('filter-status').value;
+      if (search) params.set('search', search);
+      if (status !== 'all') params.set('status', status);
+
+      fetch('/api/vouchers?' + params.toString())
+        .then(function(r) { if (!r.ok) throw new Error('API error'); return r.json(); })
+        .then(function(result) {
+          currentData = result.data; totalCount = result.total; totalPages = result.totalPages;
+          renderList(); renderPagination();
+        })
+        .catch(function() {
+          document.getElementById('voucher-rows').innerHTML =
+            '<div class="empty-state"><p>无法连接后端服务</p></div>';
+        });
+    }
+
+    function renderList() {
+      var container = document.getElementById('voucher-rows');
+      var empty = document.getElementById('empty-state');
+      document.getElementById('list-count').textContent = '共 ' + totalCount + ' 条';
+      if (!currentData.length) { container.innerHTML = ''; empty.style.display = 'flex'; return; }
+      empty.style.display = 'none';
+
+      container.innerHTML = currentData.map(function(v) {
+        return '<div class="voucher-row" onclick="location.href=\'voucher-detail.html?id=' + v.id + '\'">' +
+          '<div class="vr-id">' + v.id + '</div>' +
+          '<div class="vr-desc" title="' + v.description + '">' + v.description + '</div>' +
+          '<div class="vr-date">' + v.voucherDate + '</div>' +
+          '<div class="vr-amount">¥' + v.totalAmount.toLocaleString('zh-CN',{minimumFractionDigits:2}) + '</div>' +
+          '<div class="vr-status"><span class="badge ' + (statusBadges[v.status]||'') + '">' + (statusNames[v.status]||v.status) + '</span></div>' +
+          '</div>';
+      }).join('');
+    }
+
+    function renderPagination() {
+      var el = document.getElementById('pagination');
+      if (totalPages <= 1) { el.innerHTML = ''; return; }
+      var h = '<button class="page-btn" onclick="goPage('+(currentPage-1)+')"'+(currentPage<=1?' disabled':'')+'>‹</button>';
+      for (var i=1;i<=totalPages;i++) h += '<button class="page-btn'+(i===currentPage?' active':'')+'" onclick="goPage('+i+')">'+i+'</button>';
+      h += '<button class="page-btn" onclick="goPage('+(currentPage+1)+')"'+(currentPage>=totalPages?' disabled':'')+'>›</button>';
+      el.innerHTML = h;
+    }
+
+    function goPage(n) { currentPage = Math.max(1, Math.min(totalPages, n)); fetchVouchers(); }
+
+    var searchTimer;
+    document.getElementById('search-input').addEventListener('input', function() {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(function() { currentPage = 1; fetchVouchers(); }, 300);
+    });
+    document.getElementById('filter-status').addEventListener('change', function() { currentPage = 1; fetchVouchers(); });
+
+    fetchVouchers();
+  </script>
+</body>
+</html>

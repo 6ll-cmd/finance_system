@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>发票录入 — 发票管家</title>
+  <link rel="stylesheet" href="../css/tokens.css" />
+  <style>
+    .app-shell {
+      max-width: 860px; margin: 0 auto;
+      padding: var(--space-lg) var(--space-lg) var(--space-3xl);
+      display: flex; flex-direction: column; gap: var(--space-lg);
+    }
+    .top-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding-bottom: var(--space-md); border-bottom: 1px solid var(--border);
+      flex-wrap: wrap; gap: var(--space-md);
+    }
+    .top-bar .breadcrumb { display: flex; align-items: center; gap: var(--space-sm); font-size: 0.8125rem; color: var(--muted); }
+    .top-bar .breadcrumb a { color: var(--accent-text); text-decoration: none; }
+    .top-bar .breadcrumb a:hover { text-decoration: underline; }
+
+    /* 录入模式切换 */
+    .mode-tabs {
+      display: flex; gap: 0; border: 1px solid var(--border);
+      border-radius: var(--radius-md); overflow: hidden; width: fit-content;
+    }
+    .mode-tab {
+      padding: 8px 20px; font-size: 0.875rem; cursor: pointer;
+      background: var(--surface); color: var(--muted);
+      border: none; font-family: var(--font-body);
+      transition: all var(--duration) var(--ease);
+      letter-spacing: 0.02em;
+    }
+    .mode-tab + .mode-tab { border-left: 1px solid var(--border); }
+    .mode-tab.active { background: var(--accent); color: var(--on-accent); }
+
+    /* 表单 */
+    .form-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: var(--space-xl);
+    }
+    .form-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-lg);
+    }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 0.8125rem; font-weight: 510; color: var(--fg); letter-spacing: 0.02em; }
+    .form-group .hint { font-size: 0.75rem; color: var(--muted); }
+    .form-group.full { grid-column: 1 / -1; }
+
+    /* OCR 上传区 */
+    .ocr-zone {
+      border: 2px dashed var(--border); border-radius: var(--radius-lg);
+      padding: var(--space-3xl); text-align: center;
+      display: flex; flex-direction: column; align-items: center; gap: var(--space-md);
+      cursor: pointer; transition: all var(--duration) var(--ease);
+      background: var(--bg);
+    }
+    .ocr-zone:hover { border-color: var(--accent); background: var(--accent-light); }
+    .ocr-zone.has-file { border-style: solid; border-color: var(--success); background: var(--success-bg); }
+    .ocr-preview { max-width: 100%; max-height: 300px; border-radius: var(--radius-md); display: none; }
+    .ocr-result { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-md); }
+    .ocr-result .field-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.875rem; }
+    .ocr-result .field-row + .field-row { border-top: 1px solid var(--border-light); }
+    .ocr-result .field-label { color: var(--muted); }
+    .ocr-result .field-value { font-weight: 510; }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 768px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .app-shell { padding: var(--space-md); gap: var(--space-md); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell animate-in">
+
+    <!-- 顶栏 -->
+    <div class="top-bar">
+      <div class="breadcrumb">
+        <a href="../index.html">发票管家</a>
+        <span style="color:var(--border);">›</span>
+        <a href="invoice-list.html">发票列表</a>
+        <span style="color:var(--border);">›</span>
+        <span>发票录入</span>
+      </div>
+    </div>
+
+    <h1>发票录入</h1>
+
+    <!-- 模式切换 -->
+    <div class="mode-tabs" data-od-id="entry-mode">
+      <button class="mode-tab active" id="tab-manual" onclick="switchMode('manual')">手动录入</button>
+      <button class="mode-tab" id="tab-ocr" onclick="switchMode('ocr')">AI 智能录入</button>
+      <button class="mode-tab" id="tab-upload" onclick="switchMode('upload')">图片/PDF 上传</button>
+    </div>
+
+    <!-- 手动录入表单 -->
+    <div class="form-card" id="manual-form" data-od-id="manual-entry">
+      <form onsubmit="submitManual(event)" novalidate>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="invoice-type">发票类型 <span style="color:var(--danger);">*</span></label>
+            <select class="input select" id="invoice-type" required>
+              <option value="">请选择</option>
+              <option value="vat-special">增值税专用发票</option>
+              <option value="vat-normal">增值税电子普通发票</option>
+              <option value="vat-elec">增值税电子专用发票</option>
+              <option value="general">普通发票</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="invoice-code">发票代码</label>
+            <input type="text" class="input" id="invoice-code" placeholder="12位发票代码" maxlength="12" />
+          </div>
+          <div class="form-group">
+            <label for="invoice-number">发票号码 <span style="color:var(--danger);">*</span></label>
+            <input type="text" class="input" id="invoice-number" placeholder="8位发票号码" maxlength="8" required />
+          </div>
+          <div class="form-group">
+            <label for="invoice-date">开票日期 <span style="color:var(--danger);">*</span></label>
+            <input type="date" class="input" id="invoice-date" required />
+          </div>
+          <div class="form-group">
+            <label for="seller">销售方 <span style="color:var(--danger);">*</span></label>
+            <input type="text" class="input" id="seller" placeholder="销售方企业全称" required />
+          </div>
+          <div class="form-group">
+            <label for="buyer">购买方</label>
+            <input type="text" class="input" id="buyer" placeholder="默认：广州共生纪元云科技有限公司" value="广州共生纪元云科技有限公司" />
+          </div>
+          <div class="form-group">
+            <label for="category">发票类别 <span style="color:var(--danger);">*</span></label>
+            <select class="input select" id="category" required>
+              <option value="">请选择</option>
+              <option value="service">技术服务</option>
+              <option value="travel">差旅交通</option>
+              <option value="catering">餐饮招待</option>
+              <option value="office">办公用品</option>
+              <option value="utility">水电物业</option>
+              <option value="logistics">物流快递</option>
+              <option value="rental">房租租赁</option>
+              <option value="other">其他</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="amount">不含税金额（元） <span style="color:var(--danger);">*</span></label>
+            <input type="number" class="input" id="amount" placeholder="0.00" step="0.01" min="0" required />
+          </div>
+          <div class="form-group">
+            <label for="tax-rate">税率（%）</label>
+            <select class="input select" id="tax-rate">
+              <option value="0">0%</option>
+              <option value="3">3%</option>
+              <option value="6" selected>6%</option>
+              <option value="9">9%</option>
+              <option value="13">13%</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="notes">备注</label>
+            <input type="text" class="input" id="notes" placeholder="用途说明、关联项目等" />
+          </div>
+          <div class="form-group full">
+            <label for="invoice-image">发票图片</label>
+            <input type="file" class="input" id="invoice-image" accept="image/*,.pdf" onchange="previewImage(this)" />
+            <span class="hint">支持 JPG、PNG、PDF，最大 10MB</span>
+          </div>
+          <div class="form-group full">
+            <img class="ocr-preview" id="image-preview" alt="发票预览" />
+          </div>
+        </div>
+
+        <!-- 实时金额计算 -->
+        <div class="card" style="margin-top:var(--space-lg); background:var(--bg);">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="text-sm text-muted">含税总额预览</span>
+            <span style="font-family:var(--font-mono); font-size:1.25rem; font-weight:600;" id="total-preview">¥0.00</span>
+          </div>
+        </div>
+
+        <div class="flex gap-md" style="margin-top:var(--space-xl);">
+          <button type="submit" class="btn btn-primary btn-lg">确认录入</button>
+          <button type="button" class="btn btn-lg" onclick="history.back()">取消</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- AI 智能录入 -->
+    <div class="form-card hidden" id="ocr-form" data-od-id="ai-entry">
+      <p style="margin-bottom:var(--space-md);color:var(--muted);font-size:0.875rem;">输入发票信息，AI 自动提取并填入表单。支持自然语言描述，如：</p>
+      <p style="margin-bottom:var(--space-lg);font-size:0.8125rem;color:var(--accent);background:var(--accent-light);padding:8px 14px;border-radius:var(--radius-md);">"深圳星辰科技有限公司 增值税专用发票 金额5000元 税率6% 2026年6月20日 备注：服务器年费"</p>
+      <textarea class="input" id="ai-text-input" rows="4" placeholder="粘贴发票上的文字信息，或描述发票内容…" style="resize:vertical;min-height:100px;"></textarea>
+      <div class="flex gap-md" style="margin-top:var(--space-md);">
+        <button class="btn btn-primary" onclick="aiExtract()">🤖 AI 识别并填入</button>
+      </div>
+      <div id="ai-extract-status" style="margin-top:var(--space-md);font-size:0.875rem;"></div>
+
+      <!-- AI 提取结果预览 -->
+      <div class="hidden" id="ai-result" style="margin-top:var(--space-lg);">
+        <h3 style="margin-bottom:var(--space-md);">AI 提取结果 <span class="text-xs text-muted">（可手动修正后提交）</span></h3>
+        <div class="ocr-result">
+          <div class="field-row"><span class="field-label">发票类型</span><span class="field-value"><input type="text" class="input" id="ocr-type" style="font-size:0.875rem;padding:4px 8px;" /></span></div>
+          <div class="field-row"><span class="field-label">发票号码</span><span class="field-value"><input type="text" class="input" id="ocr-number" style="font-size:0.875rem;padding:4px 8px;" /></span></div>
+          <div class="field-row"><span class="field-label">开票日期</span><span class="field-value"><input type="date" class="input" id="ocr-date" style="font-size:0.875rem;padding:4px 8px;width:auto;" /></span></div>
+          <div class="field-row"><span class="field-label">销售方</span><span class="field-value"><input type="text" class="input" id="ocr-seller" style="font-size:0.875rem;padding:4px 8px;width:100%;" /></span></div>
+          <div class="field-row"><span class="field-label">不含税金额</span><span class="field-value"><input type="number" class="input" id="ocr-amount" style="font-size:0.875rem;padding:4px 8px;width:160px;" step="0.01" oninput="updateOcrTotal()" /></span></div>
+          <div class="field-row"><span class="field-label">税率（%）</span><span class="field-value"><input type="number" class="input" id="ocr-taxrate" style="font-size:0.875rem;padding:4px 8px;width:80px;" step="1" oninput="updateOcrTotal()" /></span></div>
+          <div class="field-row"><span class="field-label">税额</span><span class="field-value"><input type="number" class="input" id="ocr-tax" style="font-size:0.875rem;padding:4px 8px;width:160px;" step="0.01" /></span></div>
+          <div class="field-row"><span class="field-label">含税总额</span><span class="field-value"><strong id="ocr-total-display">—</strong></span></div>
+        </div>
+        <div class="flex gap-md" style="margin-top:var(--space-lg);">
+          <button class="btn btn-primary" onclick="confirmOCR()">确认并录入</button>
+          <button class="btn" onclick="resetOCR()">重新输入</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 图片/PDF 上传 -->
+    <div class="form-card hidden" id="upload-form" data-od-id="upload-entry">
+      <div style="border:2px dashed var(--border);border-radius:var(--radius-lg);padding:var(--space-3xl);text-align:center;cursor:pointer;background:var(--bg);transition:all var(--duration) var(--ease);" id="upload-zone" onclick="document.getElementById('upload-file').click()">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5" style="opacity:0.6;margin:0 auto var(--space-md);"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        <p style="font-weight:510;">点击上传发票图片或 PDF</p>
+        <p class="text-xs text-muted" style="margin-top:4px;">支持 JPG、PNG、PDF，AI 自动识别并录入</p>
+        <input type="file" class="hidden" id="upload-file" accept="image/*,.pdf" onchange="handleUpload(this)" />
+      </div>
+      <div id="upload-status" style="margin-top:var(--space-md);text-align:center;font-size:0.875rem;"></div>
+      <canvas id="upload-preview" style="max-width:100%;max-height:300px;border-radius:var(--radius-md);display:none;margin:var(--space-md) auto 0;"></canvas>
+      <!-- 识别结果 -->
+      <div class="hidden" id="upload-result" style="margin-top:var(--space-lg);">
+        <h3 style="margin-bottom:var(--space-md);">AI 识别结果 <span class="text-xs text-muted">（可手动修正）</span></h3>
+        <div class="ocr-result">
+          <div class="field-row"><span class="field-label">发票类型</span><span class="field-value"><input type="text" class="input" id="up-type" style="font-size:0.875rem;padding:4px 8px;" /></span></div>
+          <div class="field-row"><span class="field-label">发票号码</span><span class="field-value"><input type="text" class="input" id="up-number" style="font-size:0.875rem;padding:4px 8px;" /></span></div>
+          <div class="field-row"><span class="field-label">开票日期</span><span class="field-value"><input type="date" class="input" id="up-date" style="font-size:0.875rem;padding:4px 8px;width:auto;" /></span></div>
+          <div class="field-row"><span class="field-label">销售方</span><span class="field-value"><input type="text" class="input" id="up-seller" style="font-size:0.875rem;padding:4px 8px;width:100%;" /></span></div>
+          <div class="field-row"><span class="field-label">不含税金额</span><span class="field-value"><input type="number" class="input" id="up-amount" style="font-size:0.875rem;padding:4px 8px;width:160px;" step="0.01" /></span></div>
+          <div class="field-row"><span class="field-label">税率（%）</span><span class="field-value"><input type="number" class="input" id="up-taxrate" style="font-size:0.875rem;padding:4px 8px;width:80px;" step="1" /></span></div>
+        </div>
+        <div class="flex gap-md" style="margin-top:var(--space-lg);">
+          <button class="btn btn-primary" onclick="confirmUpload()">确认并录入</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="../js/auth.js"></script>
+  <script>
+    // ===== 模式切换 =====
+    function switchMode(mode) {
+      document.getElementById('tab-manual').classList.toggle('active', mode === 'manual');
+      document.getElementById('tab-ocr').classList.toggle('active', mode === 'ocr');
+      document.getElementById('tab-upload').classList.toggle('active', mode === 'upload');
+      document.getElementById('manual-form').classList.toggle('hidden', mode !== 'manual');
+      document.getElementById('ocr-form').classList.toggle('hidden', mode !== 'ocr');
+      document.getElementById('upload-form').classList.toggle('hidden', mode !== 'upload');
+    }
+
+    // ===== 图片/PDF 上传识别 =====
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    async function handleUpload(input) {
+      if (!input.files || !input.files[0]) return;
+      var file = input.files[0];
+      var status = document.getElementById('upload-status');
+      status.innerHTML = '<span style=\"color:var(--accent);\">⏳ 正在处理…</span>';
+      var zone = document.getElementById('upload-zone');
+      zone.querySelector('p').textContent = '已选择：' + file.name;
+
+      try {
+        var imageDataUrl;
+        if (file.type === 'application/pdf') {
+          status.innerHTML = '<span style=\"color:var(--accent);\">⏳ 解析 PDF…</span>';
+          var arrayBuf = await file.arrayBuffer();
+          var pdf = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
+          var page = await pdf.getPage(1);
+          var viewport = page.getViewport({ scale: 2.0 });
+          var canvas = document.getElementById('upload-preview');
+          canvas.width = viewport.width; canvas.height = viewport.height;
+          canvas.style.display = 'block';
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+          imageDataUrl = canvas.toDataURL('image/png');
+        } else {
+          var reader = new FileReader();
+          imageDataUrl = await new Promise(function(r) { reader.onload = function(e) { r(e.target.result); }; reader.readAsDataURL(file); });
+          var c2 = document.getElementById('upload-preview');
+          var img = new Image();
+          await new Promise(function(r) { img.onload = function() { c2.width = img.width; c2.height = img.height; c2.style.display = 'block'; c2.getContext('2d').drawImage(img,0,0); r(); }; img.src = imageDataUrl; });
+        }
+
+        status.innerHTML = '<span style=\"color:var(--accent);\">🤖 AI 识别中…</span>';
+        var resp = await fetch('/api/ocr/recognize', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ image: imageDataUrl })
+        });
+        var result = await resp.json();
+        if (resp.ok && result.seller) {
+          document.getElementById('up-type').value = result.type || '';
+          document.getElementById('up-number').value = result.number || '';
+          document.getElementById('up-date').value = result.date || '';
+          document.getElementById('up-seller').value = result.seller || '';
+          document.getElementById('up-amount').value = result.amount || '';
+          document.getElementById('up-taxrate').value = result.taxRate || '';
+          document.getElementById('upload-result').classList.remove('hidden');
+          status.innerHTML = '<span style=\"color:var(--success);\">✅ AI 识别完成</span>';
+          // Auto submit
+          if (result.seller && result.amount && parseFloat(result.amount) > 0) {
+            submitInvoice({
+              seller: result.seller, type: result.type || '', amount: result.amount,
+              taxRate: result.taxRate || '', date: result.date || '', number: result.number || ''
+            }).then(function(inv) {
+              status.innerHTML = '<span style=\"color:var(--success);\">✅ 发票 ' + inv.id + ' 已自动录入！</span>';
+              setTimeout(function() { window.location.href = 'invoice-list.html'; }, 1500);
+            }).catch(function(e) { status.innerHTML = '<span style=\"color:var(--warn);\">⚠️ 自动录入失败，请手动确认</span>'; });
+          }
+        } else {
+          status.innerHTML = '<span style=\"color:var(--warn);\">⚠️ AI 未能识别完整信息，请使用 AI 智能录入粘贴文字</span>';
+        }
+      } catch (e) {
+        status.innerHTML = '<span style=\"color:var(--danger);\">❌ 识别失败: ' + (e.message || '未知错误') + '</span>';
+      }
+    }
+
+    function confirmUpload() {
+      submitInvoice({
+        seller: document.getElementById('up-seller').value,
+        type: document.getElementById('up-type').value,
+        amount: document.getElementById('up-amount').value,
+        taxRate: document.getElementById('up-taxrate').value,
+        date: document.getElementById('up-date').value,
+        number: document.getElementById('up-number').value
+      }).then(function(inv) {
+        alert('发票 ' + inv.id + ' 录入成功！');
+        window.location.href = 'invoice-list.html';
+      }).catch(function(err) { alert('录入失败：' + (err.message || '请确认后端服务已启动')); });
+    }
+
+    // ===== 手动录入 =====
+    function previewImage(input) {
+      var preview = document.getElementById('image-preview');
+      if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          preview.src = e.target.result;
+          preview.style.display = 'block';
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+
+    // 实时金额计算
+    document.getElementById('amount').addEventListener('input', updateTotal);
+    document.getElementById('tax-rate').addEventListener('change', updateTotal);
+    function updateTotal() {
+      var amount = parseFloat(document.getElementById('amount').value) || 0;
+      var rate = parseFloat(document.getElementById('tax-rate').value) || 0;
+      var tax = amount * rate / 100;
+      var total = amount + tax;
+      document.getElementById('total-preview').textContent = '¥' + total.toLocaleString('zh-CN', {minimumFractionDigits:2});
+    }
+
+    function submitManual(e) {
+      e.preventDefault();
+      var form = e.target;
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+      var amount = parseFloat(document.getElementById('amount').value);
+      var rate = parseFloat(document.getElementById('tax-rate').value);
+      var taxAmount = amount * rate / 100;
+
+      var payload = {
+        seller: document.getElementById('seller').value,
+        buyer: document.getElementById('buyer').value,
+        type: document.getElementById('invoice-type').value,
+        category: document.getElementById('category').value,
+        amount: amount,
+        taxRate: rate,
+        taxAmount: Math.round(taxAmount * 100) / 100,
+        totalAmount: Math.round((amount + taxAmount) * 100) / 100,
+        notes: document.getElementById('notes').value,
+        invoiceCode: document.getElementById('invoice-code').value,
+        invoiceNumber: document.getElementById('invoice-number').value,
+        date: document.getElementById('invoice-date').value
+      };
+
+      fetch('/api/invoices', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      })
+        .then(function(r) {
+          if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || '服务器错误 ' + r.status); });
+          return r.json();
+        })
+        .then(function(inv) {
+          alert('发票 ' + inv.id + ' 录入成功！\n\n含税总额：¥' + inv.totalAmount.toLocaleString('zh-CN', {minimumFractionDigits:2}) + '\n\n将跳转至发票列表。');
+          window.location.href = 'invoice-list.html';
+        })
+        .catch(function(err) {
+          alert('录入失败\n\n' + err.message + '\n\n如持续失败，请确认已双击 start.bat 启动服务');
+        });
+    }
+
+    // ===== AI 智能录入（文字识别）=====
+    function updateOcrTotal() {
+      var amt = parseFloat(document.getElementById('ocr-amount').value) || 0;
+      var rate = parseFloat(document.getElementById('ocr-taxrate').value) || 0;
+      var tax = Math.round(amt * rate / 100 * 100) / 100;
+      document.getElementById('ocr-tax').value = tax.toFixed(2);
+      document.getElementById('ocr-total-display').textContent = '¥' + (amt + tax).toLocaleString('zh-CN', {minimumFractionDigits:2});
+    }
+
+    function showResult(fields) {
+      document.getElementById('ocr-type').value = fields.type || '';
+      document.getElementById('ocr-number').value = fields.number || '';
+      document.getElementById('ocr-date').value = fields.date || '';
+      document.getElementById('ocr-seller').value = fields.seller || '';
+      document.getElementById('ocr-amount').value = fields.amount || '';
+      document.getElementById('ocr-taxrate').value = fields.taxRate || '';
+      updateOcrTotal();
+      document.getElementById('ai-result').classList.remove('hidden');
+    }
+
+    async function aiExtract() {
+      var text = document.getElementById('ai-text-input').value.trim();
+      if (!text) { alert('请输入发票文字信息'); return; }
+      var status = document.getElementById('ai-extract-status');
+      status.innerHTML = '<span style="color:var(--accent);">⏳ AI 正在提取…</span>';
+
+      try {
+        var resp = await fetch('/api/ai/chat', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({messages: [{role:'user', content:'从以下文本提取发票字段，返回JSON：{"type":"发票类型","number":"发票号码","date":"YYYY-MM-DD","seller":"销售方","amount":金额数字,"taxRate":税率数字,"notes":"备注"}\n\n文本：' + text}]})
+        });
+        var res = await resp.json();
+        if (res.error) { status.innerHTML = '<span style="color:var(--danger);">❌ ' + res.error + '</span>'; return; }
+        var json = (res.reply||'').match(/\{[\s\S]*\}/);
+        if (json) {
+          var fields = JSON.parse(json[0]);
+          showResult(fields);
+          status.innerHTML = '<span style="color:var(--success);">✅ AI 提取完成，请核对后提交</span>';
+          if (fields.seller && fields.amount && parseFloat(fields.amount) > 0) {
+            autoSubmitFromFields(fields);
+          }
+        } else {
+          status.innerHTML = '<span style="color:var(--warn);">⚠️ 未能提取字段，请调整文本格式后重试</span>';
+        }
+      } catch (e) {
+        status.innerHTML = '<span style="color:var(--danger);">❌ AI 请求失败，请确认 AI 已配置</span>';
+      }
+    }
+
+    function submitInvoice(fields) {
+      var amount = parseFloat(fields.amount) || 0;
+      var taxRate = parseFloat(fields.taxRate) || 0;
+      var taxAmount = Math.round(amount * taxRate / 100 * 100) / 100;
+      var totalAmount = Math.round((amount + taxAmount) * 100) / 100;
+
+      return fetch('/api/invoices', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          seller: fields.seller, type: fields.type || '增值税电子普通发票',
+          category: 'other', amount: amount, taxRate: taxRate,
+          taxAmount: taxAmount, totalAmount: totalAmount,
+          date: fields.date, invoiceNumber: fields.number
+        })
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(e) { throw new Error(e.error); });
+        return r.json();
+      });
+    }
+
+    // AI 识别后自动提交
+    function autoSubmitFromFields(fields) {
+      submitInvoice(fields)
+        .then(function(inv) {
+          hideProcessing();
+          alert('AI 识别完成，发票 ' + inv.id + ' 已自动录入！\n\n销售方：' + fields.seller + '\n金额：¥' + inv.totalAmount.toLocaleString('zh-CN', {minimumFractionDigits:2}));
+          window.location.href = 'invoice-list.html';
+        })
+        .catch(function(e) {
+          hideProcessing();
+          showResult(fields);
+          alert('自动录入失败：' + e.message + '\n\n已填入识别结果，请手动确认');
+        });
+    }
+
+    function confirmOCR() {
+      var fields = {
+        seller: document.getElementById('ocr-seller').value.trim(),
+        type: document.getElementById('ocr-type').value,
+        amount: document.getElementById('ocr-amount').value,
+        taxRate: document.getElementById('ocr-taxrate').value,
+        date: document.getElementById('ocr-date').value,
+        number: document.getElementById('ocr-number').value
+      };
+      if (!fields.seller || !fields.amount) { alert('请至少填写销售方和金额'); return; }
+
+      submitInvoice(fields)
+        .then(function(inv) {
+          alert('发票 ' + inv.id + ' 录入成功！');
+          window.location.href = 'invoice-list.html';
+        })
+        .catch(function(err) { alert('录入失败：' + (err.message || '请确认后端服务已启动')); });
+    }
+
+    function resetOCR() {
+      document.getElementById('ai-result').classList.add('hidden');
+      document.getElementById('ai-text-input').value = '';
+      document.getElementById('ai-extract-status').innerHTML = '';
+    }
+  </script>
+</body>
+</html>

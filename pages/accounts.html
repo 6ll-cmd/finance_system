@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>科目表 — 发票管家</title>
+  <link rel="stylesheet" href="../css/tokens.css" />
+  <script src="../js/auth.js"></script>
+  <style>
+    .accounts-shell { max-width: 800px; margin: 0 auto; padding: var(--space-2xl) var(--space-lg); }
+    h2 { margin-bottom: var(--space-lg); }
+    .account-row {
+      display: flex; align-items: center; gap: var(--space-md);
+      padding: 8px var(--space-md); border-bottom: 1px solid var(--border-light);
+      font-size: 0.875rem;
+    }
+    .account-row:hover { background: var(--hover); }
+    .account-row.level-0 { font-weight: 590; background: var(--accent-light); }
+    .account-row.level-1 { padding-left: var(--space-2xl); }
+    .account-code { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); min-width: 80px; }
+    .account-name { flex: 1; }
+    .account-type {
+      font-size: 0.6875rem; padding: 2px 8px; border-radius: var(--radius-full);
+      background: var(--bg); color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="accounts-shell">
+    <h2>科目表</h2>
+    <div class="card" style="padding:0;overflow:hidden;" id="accounts-list">
+      <div style="padding:var(--space-2xl);text-align:center;color:var(--muted);">加载中…</div>
+    </div>
+  </div>
+  <script>
+    var typeNames = { asset:'资产', liability:'负债', equity:'权益', income:'收入', expense:'费用' };
+    fetch('/api/accounts').then(function(r){return r.json()}).then(function(accounts){
+      document.getElementById('accounts-list').innerHTML = accounts.map(function(a){
+        return '<div class="account-row level-'+a.level+'">' +
+          '<span class="account-code">'+(a.id.length>4?'':a.id)+'</span>' +
+          '<span class="account-name">'+a.name+'</span>' +
+          '<span class="account-type">'+(typeNames[a.account_type]||a.account_type)+'</span>' +
+          '</div>';
+      }).join('');
+    });
+  </script>
+</body>
+</html>

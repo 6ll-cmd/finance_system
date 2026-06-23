@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>新增凭证 — 发票管家</title>
+  <link rel="stylesheet" href="../css/tokens.css" />
+  <style>
+    .app-shell {
+      max-width: 860px; margin: 0 auto;
+      padding: var(--space-lg) var(--space-lg) var(--space-3xl);
+      display: flex; flex-direction: column; gap: var(--space-lg);
+    }
+    .top-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding-bottom: var(--space-md); border-bottom: 1px solid var(--border);
+      flex-wrap: wrap; gap: var(--space-md);
+    }
+    .top-bar .breadcrumb { display: flex; align-items: center; gap: var(--space-sm); font-size: 0.8125rem; color: var(--muted); }
+    .top-bar .breadcrumb a { color: var(--accent-text); text-decoration: none; }
+    .top-bar .breadcrumb a:hover { text-decoration: underline; }
+
+    .form-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: var(--space-xl);
+    }
+    .form-row {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-md);
+      margin-bottom: var(--space-md);
+    }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 0.8125rem; font-weight: 510; letter-spacing: 0.02em; }
+    .form-group .hint { font-size: 0.75rem; color: var(--muted); }
+
+    /* 分录表格 */
+    .entry-table { width: 100%; border-collapse: collapse; margin-top: var(--space-md); }
+    .entry-table th {
+      text-align: left; padding: 8px 10px; font-weight: 510; font-size: 0.75rem;
+      color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+    }
+    .entry-table td { padding: 6px 10px; vertical-align: middle; }
+    .entry-table .input { font-size: 0.875rem; padding: 6px 10px; }
+    .entry-table .input:focus { box-shadow: 0 0 0 2px var(--accent-light); }
+    .entry-table .amount-col { width: 120px; }
+    .entry-table .action-col { width: 40px; text-align: center; }
+
+    .delete-entry {
+      width: 28px; height: 28px; border: none; background: transparent;
+      color: var(--muted); cursor: pointer; border-radius: var(--radius-sm);
+      font-size: 1rem; display: grid; place-items: center; transition: all var(--duration) var(--ease);
+    }
+    .delete-entry:hover { background: var(--danger-bg); color: var(--danger); }
+
+    /* 汇总栏 */
+    .summary-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: var(--space-md) var(--space-lg); background: var(--bg);
+      border-radius: var(--radius-md); border: 1px solid var(--border);
+      margin-top: var(--space-md);
+    }
+    .summary-bar .sb-item { text-align: center; }
+    .summary-bar .sb-label { font-size: 0.75rem; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+    .summary-bar .sb-value { font-family: var(--font-mono); font-size: 1.125rem; font-weight: 590; }
+    .summary-bar .sb-diff { font-family: var(--font-mono); font-weight: 590; }
+    .summary-bar .sb-diff.ok { color: var(--success); }
+    .summary-bar .sb-diff.err { color: var(--danger); }
+
+    .action-row { display: flex; gap: var(--space-md); margin-top: var(--space-xl); }
+
+    @media (max-width: 768px) {
+      .form-row { grid-template-columns: 1fr; }
+      .app-shell { padding: var(--space-md); gap: var(--space-md); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell animate-in">
+
+    <div class="top-bar">
+      <div class="breadcrumb">
+        <a href="../index.html">发票管家</a>
+        <span style="color:var(--border);">›</span>
+        <a href="voucher-list.html">凭证列表</a>
+        <span style="color:var(--border);">›</span>
+        <span>新增凭证</span>
+      </div>
+    </div>
+
+    <h1>新增凭证</h1>
+
+    <div class="form-card" data-od-id="voucher-form">
+      <!-- 凭证头 -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="voucher-date">凭证日期 <span style="color:var(--danger);">*</span></label>
+          <input type="date" class="input" id="voucher-date" required />
+        </div>
+        <div class="form-group" style="grid-column:span 2;">
+          <label for="description">摘要 <span style="color:var(--danger);">*</span></label>
+          <input type="text" class="input" id="description" placeholder="简要描述此笔凭证的业务内容" required />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="grid-column:span 3;">
+          <label for="voucher-notes">备注</label>
+          <input type="text" class="input" id="voucher-notes" placeholder="附加说明（可选）" />
+        </div>
+      </div>
+
+      <!-- 分录录入 -->
+      <h3 style="margin-top:var(--space-lg);margin-bottom:var(--space-sm);">借贷分录</h3>
+      <div style="overflow-x:auto;">
+        <table class="entry-table">
+          <thead>
+            <tr><th>会计科目</th><th class="amount-col">借方金额</th><th class="amount-col">贷方金额</th><th>摘要</th><th class="action-col"></th></tr>
+          </thead>
+          <tbody id="entry-rows">
+            <tr class="entry-row">
+              <td><select class="input account-select" style="font-size:0.875rem;padding:6px 10px;"><option value="">选择科目</option></select></td>
+              <td><input type="number" class="input debit-input" placeholder="0.00" step="0.01" min="0" oninput="updateSummary()" /></td>
+              <td><input type="number" class="input credit-input" placeholder="0.00" step="0.01" min="0" oninput="updateSummary()" /></td>
+              <td><input type="text" class="input summary-input" placeholder="分录摘要" /></td>
+              <td><button type="button" class="delete-entry" onclick="removeEntry(this)" title="删除此行">×</button></td>
+            </tr>
+            <tr class="entry-row">
+              <td><select class="input account-select" style="font-size:0.875rem;padding:6px 10px;"><option value="">选择科目</option></select></td>
+              <td><input type="number" class="input debit-input" placeholder="0.00" step="0.01" min="0" oninput="updateSummary()" /></td>
+              <td><input type="number" class="input credit-input" placeholder="0.00" step="0.01" min="0" oninput="updateSummary()" /></td>
+              <td><input type="text" class="input summary-input" placeholder="分录摘要" /></td>
+              <td><button type="button" class="delete-entry" onclick="removeEntry(this)" title="删除此行">×</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <button type="button" class="btn btn-sm" onclick="addEntry()" style="margin-top:var(--space-sm);">+ 添加分录行</button>
+
+      <!-- 借贷汇总 -->
+      <div class="summary-bar">
+        <div class="sb-item">
+          <div class="sb-label">借方合计</div>
+          <div class="sb-value" id="total-debit">¥0.00</div>
+        </div>
+        <div class="sb-item">
+          <div class="sb-label">贷方合计</div>
+          <div class="sb-value" id="total-credit">¥0.00</div>
+        </div>
+        <div class="sb-item">
+          <div class="sb-label">差额</div>
+          <div class="sb-diff err" id="balance-diff">¥0.00</div>
+        </div>
+      </div>
+
+      <div class="action-row">
+        <button type="button" class="btn btn-primary btn-lg" onclick="submitVoucher()">确认录入</button>
+        <button type="button" class="btn btn-lg" onclick="history.back()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../js/auth.js"></script>
+  <script>
+    // 默认日期为今天
+    document.getElementById('voucher-date').value = new Date().toISOString().split('T')[0];
+
+    // 加载科目表填充所有下拉框
+    var accountOptions = '';
+    fetch('/api/accounts').then(function(r){return r.json()}).then(function(accounts){
+      accountOptions = accounts.map(function(a){
+        var indent = a.level > 0 ? ' ' + '├ '.repeat(a.level) : '';
+        return '<option value="'+a.name+'">'+indent+a.name+'</option>';
+      }).join('');
+      document.querySelectorAll('.account-select').forEach(function(s){ s.innerHTML = '<option value="">选择科目</option>' + accountOptions; });
+    });
+
+    function addEntry() {
+      var tbody = document.getElementById('entry-rows');
+      var row = document.createElement('tr');
+      row.className = 'entry-row';
+      row.innerHTML = '<td><select class="input account-select" style="font-size:0.875rem;padding:6px 10px;"><option value="">选择科目</option>' + accountOptions + '</select></td>' +
+        '<td><input type="number" class="input debit-input" placeholder="0.00" step="0.01" min="0" oninput="updateSummary()" /></td>' +
+        '<td><input type="number" class="input credit-input" placeholder="0.00" step="0.01" min="0" oninput="updateSummary()" /></td>' +
+        '<td><input type="text" class="input summary-input" placeholder="分录摘要" /></td>' +
+        '<td><button type="button" class="delete-entry" onclick="removeEntry(this)" title="删除此行">×</button></td>';
+      tbody.appendChild(row);
+      updateSummary();
+    }
+
+    function removeEntry(btn) {
+      var rows = document.querySelectorAll('#entry-rows .entry-row');
+      if (rows.length <= 2) return; // 至少保留 2 行
+      btn.closest('.entry-row').remove();
+      updateSummary();
+    }
+
+    function updateSummary() {
+      var debits = document.querySelectorAll('.debit-input');
+      var credits = document.querySelectorAll('.credit-input');
+      var totalDebit = 0, totalCredit = 0;
+      debits.forEach(function(el) { totalDebit += parseFloat(el.value) || 0; });
+      credits.forEach(function(el) { totalCredit += parseFloat(el.value) || 0; });
+
+      document.getElementById('total-debit').textContent = '¥' + totalDebit.toLocaleString('zh-CN', {minimumFractionDigits:2});
+      document.getElementById('total-credit').textContent = '¥' + totalCredit.toLocaleString('zh-CN', {minimumFractionDigits:2});
+
+      var diff = Math.abs(totalDebit - totalCredit);
+      var diffEl = document.getElementById('balance-diff');
+      diffEl.textContent = '¥' + diff.toLocaleString('zh-CN', {minimumFractionDigits:2});
+      diffEl.className = 'sb-diff ' + (diff < 0.01 ? 'ok' : 'err');
+    }
+
+    function submitVoucher() {
+      var voucherDate = document.getElementById('voucher-date').value;
+      var description = document.getElementById('description').value.trim();
+      var notes = document.getElementById('voucher-notes').value.trim();
+
+      if (!voucherDate || !description) {
+        alert('请填写凭证日期和摘要'); return;
+      }
+
+      var accounts = document.querySelectorAll('.account-select');
+      var debits = document.querySelectorAll('.debit-input');
+      var credits = document.querySelectorAll('.credit-input');
+      var summaries = document.querySelectorAll('.summary-input');
+
+      var entries = [];
+      for (var i = 0; i < accounts.length; i++) {
+        var account = accounts[i].value.trim();
+        var debit = parseFloat(debits[i].value) || 0;
+        var credit = parseFloat(credits[i].value) || 0;
+        if (!account && debit === 0 && credit === 0) continue; // 跳过空行
+        entries.push({
+          account: account || '（未指定科目）',
+          debitAmount: debit,
+          creditAmount: credit,
+          summary: summaries[i].value.trim()
+        });
+      }
+
+      if (!entries.length) { alert('请至少填写一条分录'); return; }
+
+      fetch('/api/vouchers', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ voucherDate: voucherDate, description: description, notes: notes, entries: entries })
+      })
+        .then(function(r) {
+          if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || '录入失败'); });
+          return r.json();
+        })
+        .then(function(v) {
+          alert('凭证 ' + v.id + ' 录入成功！\n\n合计金额：¥' + v.totalAmount.toLocaleString('zh-CN', {minimumFractionDigits:2}));
+          window.location.href = 'voucher-list.html';
+        })
+        .catch(function(err) {
+          alert('录入失败：' + err.message);
+        });
+    }
+
+    updateSummary();
+  </script>
+</body>
+</html>
