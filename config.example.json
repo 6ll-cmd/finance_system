@@ -1,9 +1,0 @@
-{
-  "ai": {
-    "provider": "openai",
-    "apiKey": "",
-    "model": "gpt-4o",
-    "baseUrl": "https://api.openai.com/v1",
-    "maxTokens": 800
-  }
-}

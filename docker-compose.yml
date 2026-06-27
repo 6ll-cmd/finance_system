@@ -1,0 +1,37 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: finance_db
+      POSTGRES_USER: finance_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-finance_pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finance_user -d finance_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "3456:3456"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/finance_db
+      SPRING_DATASOURCE_USERNAME: finance_user
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-finance_pass}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      AI_MODEL: ${AI_MODEL:-gpt-4o}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
