@@ -47,7 +47,7 @@ export function logout() {
 
 export async function apiFetch(input, init) {
   let res = await fetch(input, init)
-  if (res.status !== 401) return res
+  if (res.status !== 401 && res.status !== 403) return res
 
   if (!refreshToken()) { logout(); return res }
   try {

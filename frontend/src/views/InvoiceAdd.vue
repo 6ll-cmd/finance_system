@@ -41,6 +41,18 @@ const taxAmount=computed(()=>Math.round((Number(f.value.amount)||0)*(Number(f.va
 const totalAmount=computed(()=>Math.round(((Number(f.value.amount)||0)+taxAmount.value)*100)/100)
 const totalAmountCn=computed(()=>moneyToChinese(totalAmount.value))
 
+async function readError(res, fallback) {
+  const text = await res.text().catch(() => '')
+  if (!text) return fallback
+  try {
+    const data = JSON.parse(text)
+    return data.error || fallback
+  } catch (e) {
+    if (text.trim() === 'Forbidden') return '登录已过期，请重新登录后再上传识别'
+    return text.trim() || fallback
+  }
+}
+
 function moneyToChinese(value){
   const n=Number(value)||0
   if(!n)return '零元整'
@@ -251,8 +263,8 @@ async function recognize(e){
       const textContent=await extractPdfText(file)
       ocr.value={loading:true,fileName:file.name,message:'正在解析字段...',ok:null}
       const r=await apiFetch('/api/ocr/parse-text',{method:'POST',headers:hdr(),body:JSON.stringify({text:textContent})})
+      if(!r.ok)throw new Error(await readError(r, '解析失败'))
       const data=await r.json()
-      if(!r.ok)throw new Error(data.error||'解析失败')
       // still render preview image
       try{preview.value=await renderPdfFirstPage(file)}catch(e){}
       applyOcr(data)
@@ -263,8 +275,8 @@ async function recognize(e){
     preview.value=image
     ocr.value={loading:true,fileName:file.name,message:'AI 识别中...',ok:null}
     const r=await apiFetch('/api/ocr/recognize',{method:'POST',headers:hdr(),body:JSON.stringify({image})})
+    if(!r.ok)throw new Error(await readError(r, '识别失败'))
     const data=await r.json()
-    if(!r.ok)throw new Error(data.error||'识别失败')
     applyOcr(data)
     ocr.value={loading:false,fileName:file.name,message:'已回填识别结果',ok:true}
   }catch(err){
