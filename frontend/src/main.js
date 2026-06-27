@@ -20,6 +20,7 @@ import CashFlow from './views/CashFlow.vue'
 
 const routes = [
   { path: '/login', component: Login, meta: { guest: true } },
+  { path: '/register', component: Login, meta: { guest: true } },
   { path: '/', component: Dashboard },
   { path: '/invoices', component: Invoices },
   { path: '/invoices/add', component: InvoiceAdd },
@@ -44,7 +45,7 @@ router.beforeEach((to) => {
   const user = JSON.parse(localStorage.getItem('fin_user') || 'null')
   const token = localStorage.getItem('fin_token') || ''
   if ((!user || !token) && !to.meta.guest) return '/login'
-  if (user && to.path === '/login') return '/'
+  if (user && to.meta.guest) return '/'
 })
 
 const app = createApp(App)

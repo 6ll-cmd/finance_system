@@ -7,6 +7,7 @@ import { logout } from './api.js'
 const router = useRouter()
 const user = JSON.parse(localStorage.getItem('fin_user') || 'null')
 const aiOpen = ref(false)
+const isGuestPage = () => ['/login', '/register'].includes(router.currentRoute.value.path)
 
 const navSections = [
   {
@@ -55,7 +56,7 @@ onMounted(() => {
 
 <template>
   <div id="app-layout" class="app-layout">
-    <nav class="sidebar" v-if="$route.path!=='/login'">
+    <nav class="sidebar" v-if="!isGuestPage()">
       <div class="sidebar-logo">
         <div class="logo-icon">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -84,9 +85,9 @@ onMounted(() => {
         </div>
       </div>
     </nav>
-    <div :class="$route.path==='/login'?'':'main'" :style="$route.path==='/login'?{flex:1}:{}">
+    <div :class="isGuestPage()?'':'main'" :style="isGuestPage()?{flex:1}:{}">
       <router-view />
     </div>
-    <AiAssistant v-if="$route.path!=='/login'" v-model:open="aiOpen" />
+    <AiAssistant v-if="!isGuestPage()" v-model:open="aiOpen" />
   </div>
 </template>
