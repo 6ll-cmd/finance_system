@@ -6,7 +6,6 @@ import BackButton from '../components/BackButton.vue'
 const router=useRouter()
 const token=()=>localStorage.getItem('fin_token')||''
 const hdr=()=>({Authorization:'Bearer '+token(),'Content-Type':'application/json'})
-const mode=ref('manual')
 const f=ref({
   seller:'',
   buyer:'广州共生纪元云科技有限公司',
@@ -301,12 +300,24 @@ async function recognize(e){
 
   <h1>发票录入</h1>
 
-  <div class="mode-tabs">
-    <button class="mode-tab" :class="{active:mode==='manual'}" @click="mode='manual'">手动录入</button>
-    <button class="mode-tab" :class="{active:mode==='upload'}" @click="mode='upload'">图片/PDF 上传</button>
-  </div>
+  <div class="form-card">
+    <div class="unified-upload">
+      <label class="ocr-zone compact">
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5" style="opacity:.65;">
+          <rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+        </svg>
+        <strong>{{ ocr.fileName || '上传发票图片或 PDF 自动识别' }}</strong>
+        <span class="hint">识别结果会自动回填到下方表单，也可以直接手动填写</span>
+        <input type="file" class="hidden" accept="image/*,.pdf" @change="recognize">
+      </label>
 
-  <div v-if="mode==='manual'" class="form-card">
+      <div class="upload-side">
+        <div v-if="ocr.message" class="ocr-status" :style="{color: ocr.ok === false ? 'var(--danger)' : (ocr.ok ? 'var(--success)' : 'var(--accent)')}">{{ ocr.message }}</div>
+        <img v-if="preview" :src="preview" alt="发票预览" class="invoice-preview">
+        <div v-if="ocr.ok" class="hint">已识别并填入表单，请核对后保存。</div>
+      </div>
+    </div>
+
     <div class="form-grid">
       <div class="form-group">
         <label>发票类型</label>
@@ -425,43 +436,20 @@ async function recognize(e){
     <div class="flex mt">
       <button class="btn btn-primary btn-lg" :disabled="saving" @click="submit">确认录入</button>
       <button class="btn btn-o btn-lg" @click="router.push('/invoices')">取消</button>
+      <button class="btn btn-o btn-lg" :disabled="voucher.loading" @click="createVoucherDraft">生成凭证草稿</button>
     </div>
+    <div v-if="voucher.message" style="margin-top:var(--space-md);font-size:14px;" :style="{color: voucher.ok === false ? 'var(--danger)' : (voucher.ok ? 'var(--success)' : 'var(--accent)')}">{{ voucher.message }}</div>
     <div v-if="error" style="margin-top:var(--space-md);color:var(--danger);font-size:14px;">{{ error }}</div>
   </div>
-
-  <div v-else class="form-card">
-    <label class="ocr-zone">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5" style="opacity:.65;">
-        <rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
-      </svg>
-      <strong>{{ ocr.fileName || '点击上传发票图片或 PDF' }}</strong>
-      <span class="hint">支持 JPG、PNG、PDF；PDF 会自动渲染首页用于识别</span>
-      <input type="file" class="hidden" accept="image/*,.pdf" @change="recognize">
-    </label>
-    <div v-if="ocr.message" style="margin-top:var(--space-md);text-align:center;font-size:14px;" :style="{color: ocr.ok === false ? 'var(--danger)' : (ocr.ok ? 'var(--success)' : 'var(--accent)')}">{{ ocr.message }}</div>
-    <img v-if="preview" :src="preview" alt="发票预览" style="max-width:100%;max-height:300px;border-radius:var(--radius-md);display:block;margin:var(--space-md) auto 0;">
-
-    <div v-if="ocr.ok" style="margin-top:var(--space-lg);">
-      <h2>AI 识别结果 <span class="hint">（可手动修正）</span></h2>
-      <div class="ocr-result">
-        <div class="field-row"><span class="field-label">发票类型</span><span class="field-value"><input class="input" v-model="f.type"></span></div>
-        <div class="field-row"><span class="field-label">发票号码</span><span class="field-value"><input class="input" v-model="f.num"></span></div>
-        <div class="field-row"><span class="field-label">开票日期</span><span class="field-value"><input class="input" type="date" v-model="f.date"></span></div>
-        <div class="field-row"><span class="field-label">销售方</span><span class="field-value"><input class="input" v-model="f.seller"></span></div>
-        <div class="field-row"><span class="field-label">购买方</span><span class="field-value"><input class="input" v-model="f.buyer"></span></div>
-        <div class="field-row"><span class="field-label">项目名称</span><span class="field-value"><input class="input" v-model="f.itemName"></span></div>
-        <div class="field-row"><span class="field-label">不含税金额</span><span class="field-value"><input class="input" type="number" step="0.01" v-model.number="f.amount"></span></div>
-        <div class="field-row"><span class="field-label">税率（%）</span><span class="field-value"><input class="input" type="number" step="1" v-model.number="f.taxRate"></span></div>
-        <div class="field-row"><span class="field-label">备注</span><span class="field-value"><input class="input" v-model="f.notes"></span></div>
-      </div>
-      <div class="flex mt">
-        <button class="btn btn-primary" :disabled="saving" @click="submit">确认并录入</button>
-        <button class="btn btn-o" :disabled="voucher.loading" @click="createVoucherDraft">生成凭证草稿</button>
-      </div>
-      <div v-if="voucher.message" style="margin-top:var(--space-md);font-size:14px;" :style="{color: voucher.ok === false ? 'var(--danger)' : (voucher.ok ? 'var(--success)' : 'var(--accent)')}">{{ voucher.message }}</div>
-      <div v-if="error" style="margin-top:var(--space-md);color:var(--danger);font-size:14px;">{{ error }}</div>
-    </div>
-  </div>
 </template>
+
+<style scoped>
+.unified-upload{display:grid;grid-template-columns:minmax(280px,1fr) minmax(220px,320px);gap:16px;align-items:stretch;margin-bottom:22px}
+.ocr-zone.compact{padding:24px;min-height:170px;justify-content:center}
+.upload-side{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg);padding:14px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:10px;min-height:170px}
+.ocr-status{text-align:center;font-size:14px}
+.invoice-preview{max-width:100%;max-height:220px;border-radius:var(--radius-md);display:block;object-fit:contain}
+@media (max-width:900px){.unified-upload{grid-template-columns:1fr}.upload-side{min-height:auto}}
+</style>
 
 
