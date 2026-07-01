@@ -6,11 +6,13 @@ import com.symbiosis.finance.entity.Account;
 import com.symbiosis.finance.entity.User;
 import com.symbiosis.finance.entity.Voucher;
 import com.symbiosis.finance.entity.VoucherEntry;
+import com.symbiosis.finance.entity.VoucherResponsiblePerson;
 import com.symbiosis.finance.mapper.AccountMapper;
 import com.symbiosis.finance.mapper.InvoiceMapper;
 import com.symbiosis.finance.mapper.UserMapper;
 import com.symbiosis.finance.mapper.VoucherEntryMapper;
 import com.symbiosis.finance.mapper.VoucherMapper;
+import com.symbiosis.finance.mapper.VoucherResponsiblePersonMapper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import org.springframework.http.ResponseEntity;
@@ -35,16 +37,20 @@ public class VoucherController {
     private final AccountMapper accountMapper;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final VoucherResponsiblePersonMapper responsiblePersonMapper;
+    private final Object voucherIdLock = new Object();
 
     public VoucherController(VoucherMapper voucherMapper, VoucherEntryMapper entryMapper,
                              InvoiceMapper invoiceMapper, AccountMapper accountMapper,
-                             UserMapper userMapper, PasswordEncoder passwordEncoder) {
+                             UserMapper userMapper, PasswordEncoder passwordEncoder,
+                             VoucherResponsiblePersonMapper responsiblePersonMapper) {
         this.voucherMapper = voucherMapper;
         this.entryMapper = entryMapper;
         this.invoiceMapper = invoiceMapper;
         this.accountMapper = accountMapper;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
+        this.responsiblePersonMapper = responsiblePersonMapper;
     }
 
     private ResponseEntity<?> checkOperationPassword(String userId, String opPassword) {
@@ -68,8 +74,9 @@ public class VoucherController {
 
     public static class CreateVoucherRequest {
         @NotNull public LocalDate voucherDate;
-        @NotBlank public String description;
+        public String description;
         public String notes;
+        public String responsiblePerson;
         @NotEmpty public List<EntryRequest> entries;
         public String operationPassword;
     }
@@ -97,6 +104,14 @@ public class VoucherController {
         public String operationPassword;
     }
 
+    public static class ResponsiblePersonRequest {
+        @NotBlank public String name;
+    }
+
+    public static class PostAllRequest {
+        public String operationPassword;
+    }
+
     private Map<String, Object> toMap(Voucher v) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", v.getId());
@@ -105,10 +120,54 @@ public class VoucherController {
         m.put("totalAmount", v.getTotalAmount());
         m.put("status", v.getStatus());
         m.put("notes", v.getNotes());
+        m.put("responsiblePerson", v.getResponsiblePerson());
         m.put("userId", v.getUserId() != null ? v.getUserId().toString() : null);
         m.put("createdAt", v.getCreatedAt() != null ? v.getCreatedAt().toString() : null);
         m.put("updatedAt", v.getUpdatedAt() != null ? v.getUpdatedAt().toString() : null);
         return m;
+    }
+
+    private String cleanResponsiblePerson(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private void ensureResponsiblePerson(UUID userId, String name) {
+        String cleanName = cleanResponsiblePerson(name);
+        if (cleanName.isBlank()) return;
+        Long existing = responsiblePersonMapper.selectCount(new LambdaQueryWrapper<VoucherResponsiblePerson>()
+                .eq(VoucherResponsiblePerson::getUserId, userId)
+                .eq(VoucherResponsiblePerson::getName, cleanName));
+        if (existing != null && existing > 0) return;
+        VoucherResponsiblePerson person = new VoucherResponsiblePerson();
+        person.setId(UUID.randomUUID());
+        person.setUserId(userId);
+        person.setName(cleanName);
+        person.setCreatedAt(OffsetDateTime.now());
+        responsiblePersonMapper.insert(person);
+    }
+
+    @GetMapping("/voucher-responsible-people")
+    public ResponseEntity<?> responsiblePeople(@AuthenticationPrincipal String userId) {
+        UUID uid = UUID.fromString(userId);
+        List<String> names = responsiblePersonMapper.selectList(new LambdaQueryWrapper<VoucherResponsiblePerson>()
+                        .eq(VoucherResponsiblePerson::getUserId, uid)
+                        .orderByAsc(VoucherResponsiblePerson::getName))
+                .stream()
+                .map(VoucherResponsiblePerson::getName)
+                .toList();
+        return ResponseEntity.ok(Map.of("data", names));
+    }
+
+    @PostMapping("/voucher-responsible-people")
+    public ResponseEntity<?> addResponsiblePerson(@AuthenticationPrincipal String userId,
+                                                  @Valid @RequestBody ResponsiblePersonRequest req) {
+        UUID uid = UUID.fromString(userId);
+        String name = cleanResponsiblePerson(req.name);
+        if (name.length() > 64) {
+            return ResponseEntity.badRequest().body(Map.of("error", "负责人名称不能超过 64 个字符"));
+        }
+        ensureResponsiblePerson(uid, name);
+        return ResponseEntity.status(201).body(Map.of("name", name));
     }
 
     private Map<String, Object> toEntryMap(VoucherEntry e) {
@@ -130,6 +189,8 @@ public class VoucherController {
                                   @RequestParam(required = false) String status,
                                   @RequestParam(required = false, defaultValue = "1") int page,
                                   @RequestParam(required = false, defaultValue = "20") int size) {
+        page = Math.max(1, page);
+        size = Math.max(1, Math.min(200, size));
         UUID uid = UUID.fromString(userId);
         LambdaQueryWrapper<Voucher> countQw = new LambdaQueryWrapper<Voucher>().eq(Voucher::getUserId, uid);
         if (status != null && !status.equals("all")) countQw.eq(Voucher::getStatus, status);
@@ -137,7 +198,7 @@ public class VoucherController {
 
         LambdaQueryWrapper<Voucher> qw = new LambdaQueryWrapper<Voucher>().eq(Voucher::getUserId, uid).orderByDesc(Voucher::getCreatedAt);
         if (status != null && !status.equals("all")) qw.eq(Voucher::getStatus, status);
-        qw.last("LIMIT " + size + " OFFSET " + (Math.max(0, page - 1) * size));
+        qw.last("LIMIT " + size + " OFFSET " + ((long) (page - 1) * size));
         List<Voucher> list = voucherMapper.selectList(qw);
         Map<String, String> accountNames = new HashMap<>();
         for (Account account : accountMapper.selectList(null)) {
@@ -180,11 +241,30 @@ public class VoucherController {
     private void validateBalance(List<EntryRequest> entries) {
         BigDecimal debit = BigDecimal.ZERO, credit = BigDecimal.ZERO;
         for (EntryRequest e : entries) {
-            debit = debit.add(e.debitAmount != null ? e.debitAmount : BigDecimal.ZERO);
-            credit = credit.add(e.creditAmount != null ? e.creditAmount : BigDecimal.ZERO);
+            if (e.account == null || e.account.isBlank()) {
+                throw new IllegalArgumentException("voucher entry account required");
+            }
+            if (accountMapper.selectById(e.account) == null) {
+                throw new IllegalArgumentException("voucher entry account not found: " + e.account);
+            }
+            BigDecimal rowDebit = e.debitAmount != null ? e.debitAmount : BigDecimal.ZERO;
+            BigDecimal rowCredit = e.creditAmount != null ? e.creditAmount : BigDecimal.ZERO;
+            if (rowDebit.compareTo(BigDecimal.ZERO) < 0 || rowCredit.compareTo(BigDecimal.ZERO) < 0) {
+                throw new IllegalArgumentException("voucher entry amount cannot be negative");
+            }
+            boolean hasDebit = rowDebit.compareTo(BigDecimal.ZERO) > 0;
+            boolean hasCredit = rowCredit.compareTo(BigDecimal.ZERO) > 0;
+            if (hasDebit == hasCredit) {
+                throw new IllegalArgumentException("voucher entry must have either debit or credit amount");
+            }
+            debit = debit.add(rowDebit);
+            credit = credit.add(rowCredit);
         }
         if (debit.compareTo(credit) != 0) {
             throw new IllegalArgumentException(String.format("imbalanced: debit %s credit %s", debit, credit));
+        }
+        if (debit.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("voucher total amount must be greater than zero");
         }
     }
 
@@ -202,6 +282,17 @@ public class VoucherController {
 
     private BigDecimal money(BigDecimal value) {
         return value != null ? value : BigDecimal.ZERO;
+    }
+
+    private String cleanDescription(String description, String notes, List<EntryRequest> entries) {
+        if (description != null && !description.isBlank()) return description.trim();
+        if (notes != null && !notes.isBlank()) return notes.trim();
+        if (entries != null) {
+            for (EntryRequest entry : entries) {
+                if (entry.summary != null && !entry.summary.isBlank()) return entry.summary.trim();
+            }
+        }
+        return "凭证";
     }
 
     private String expenseAccount(String category, String type, String seller, String notes) {
@@ -258,26 +349,28 @@ public class VoucherController {
         validateBalance(entries);
 
         int year = Year.now().getValue();
-        String lastId = voucherMapper.findLastIdByYear(year);
-        int next = 1;
-        if (lastId != null) {
-            try { next = Integer.parseInt(lastId.split("-")[2]) + 1; } catch (Exception ignored) {}
-        }
-        String newId = String.format("VCH-%d-%04d", year, next);
-
         String number = req.invoiceNumber != null && !req.invoiceNumber.isBlank() ? " (invoice no: " + req.invoiceNumber + ")" : "";
         Voucher v = new Voucher();
-        v.setId(newId);
         v.setVoucherDate(req.date != null ? req.date : LocalDate.now());
         v.setDescription("voucher from invoice: " + (req.seller != null ? req.seller : "unknown seller") + number);
         v.setTotalAmount(total);
         v.setStatus("draft");
         v.setNotes("AI OCR generated, please review manually." + (req.invoiceId != null ? " from invoice: " + req.invoiceId : ""));
+        v.setResponsiblePerson("");
         v.setUserId(uid);
         v.setCreatedAt(OffsetDateTime.now());
         v.setUpdatedAt(OffsetDateTime.now());
-        voucherMapper.insert(v);
-        saveEntries(newId, entries);
+        synchronized (voucherIdLock) {
+            String lastId = voucherMapper.findLastIdByYear(year);
+            int next = 1;
+            if (lastId != null) {
+                try { next = Integer.parseInt(lastId.split("-")[2]) + 1; } catch (Exception ignored) {}
+            }
+            String newId = String.format("VCH-%d-%04d", year, next);
+            v.setId(newId);
+            voucherMapper.insert(v);
+            saveEntries(newId, entries);
+        }
 
         Map<String, Object> resp = toMap(v);
         resp.put("entries", entries.stream().map(e -> {
@@ -301,29 +394,36 @@ public class VoucherController {
         UUID uid = UUID.fromString(userId);
         int year = Year.now().getValue();
 
-        String lastId = voucherMapper.findLastIdByYear(year);
-        int next = 1;
-        if (lastId != null) {
-            try { next = Integer.parseInt(lastId.split("-")[2]) + 1; } catch (Exception ignored) {}
-        }
-        String newId = String.format("VCH-%d-%04d", year, next);
-
         BigDecimal total = req.entries.stream()
                 .map(e -> e.debitAmount != null ? e.debitAmount : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        String responsiblePerson = cleanResponsiblePerson(req.responsiblePerson);
+        if (responsiblePerson.length() > 64) {
+            return ResponseEntity.badRequest().body(Map.of("error", "负责人名称不能超过 64 个字符"));
+        }
 
         Voucher v = new Voucher();
-        v.setId(newId);
         v.setVoucherDate(req.voucherDate);
-        v.setDescription(req.description);
+        v.setDescription(cleanDescription(req.description, req.notes, req.entries));
         v.setTotalAmount(total);
         v.setStatus("draft");
         v.setNotes(req.notes != null ? req.notes : "");
+        v.setResponsiblePerson(responsiblePerson);
         v.setUserId(uid);
         v.setCreatedAt(OffsetDateTime.now());
         v.setUpdatedAt(OffsetDateTime.now());
-        voucherMapper.insert(v);
-        saveEntries(newId, req.entries);
+        synchronized (voucherIdLock) {
+            String lastId = voucherMapper.findLastIdByYear(year);
+            int next = 1;
+            if (lastId != null) {
+                try { next = Integer.parseInt(lastId.split("-")[2]) + 1; } catch (Exception ignored) {}
+            }
+            String newId = String.format("VCH-%d-%04d", year, next);
+            v.setId(newId);
+            voucherMapper.insert(v);
+            ensureResponsiblePerson(uid, responsiblePerson);
+            saveEntries(newId, req.entries);
+        }
 
         Map<String, Object> resp = toMap(v);
         resp.put("entries", req.entries.stream().map(e -> {
@@ -383,13 +483,19 @@ public class VoucherController {
         BigDecimal total = req.entries.stream()
                 .map(e -> e.debitAmount != null ? e.debitAmount : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        String responsiblePerson = cleanResponsiblePerson(req.responsiblePerson);
+        if (responsiblePerson.length() > 64) {
+            return ResponseEntity.badRequest().body(Map.of("error", "负责人名称不能超过 64 个字符"));
+        }
 
         v.setVoucherDate(req.voucherDate);
-        v.setDescription(req.description);
+        v.setDescription(cleanDescription(req.description, req.notes, req.entries));
         v.setTotalAmount(total);
         v.setNotes(req.notes != null ? req.notes : "");
+        v.setResponsiblePerson(responsiblePerson);
         v.setUpdatedAt(OffsetDateTime.now());
         voucherMapper.updateById(v);
+        ensureResponsiblePerson(uid, responsiblePerson);
 
         entryMapper.delete(new LambdaQueryWrapper<VoucherEntry>().eq(VoucherEntry::getVoucherId, id));
         saveEntries(id, req.entries);
@@ -417,6 +523,28 @@ public class VoucherController {
         voucherMapper.updateById(v);
 
         return ResponseEntity.ok(toMap(v));
+    }
+
+    @PostMapping("/vouchers/post-all")
+    @Transactional
+    public ResponseEntity<?> postAll(@AuthenticationPrincipal String userId,
+                                     @RequestBody(required = false) PostAllRequest req) {
+        ResponseEntity<?> denied = checkOperationPassword(userId, req != null ? req.operationPassword : null);
+        if (denied != null) return denied;
+
+        UUID uid = UUID.fromString(userId);
+        List<Voucher> drafts = voucherMapper.selectList(new LambdaQueryWrapper<Voucher>()
+                .eq(Voucher::getUserId, uid)
+                .eq(Voucher::getStatus, "draft"));
+        OffsetDateTime now = OffsetDateTime.now();
+        int updated = 0;
+        for (Voucher voucher : drafts) {
+            voucher.setStatus("posted");
+            voucher.setUpdatedAt(now);
+            voucherMapper.updateById(voucher);
+            updated++;
+        }
+        return ResponseEntity.ok(Map.of("updated", updated));
     }
 
     @DeleteMapping("/vouchers/{id}")

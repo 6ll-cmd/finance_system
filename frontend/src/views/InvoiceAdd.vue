@@ -10,11 +10,7 @@ const f=ref({
   seller:'',
   buyer:'广州共生纪元云科技有限公司',
   buyerTaxNo:'',
-  buyerAddressPhone:'',
-  buyerBankAccount:'',
   sellerTaxNo:'',
-  sellerAddressPhone:'',
-  sellerBankAccount:'',
   date:new Date().toISOString().split('T')[0],
   itemName:'',
   itemSpec:'',
@@ -25,7 +21,6 @@ const f=ref({
   taxRate:6,
   cat:'service',
   type:'增值税电子普通发票',
-  code:'',
   num:'',
   notes:''
 })
@@ -34,6 +29,7 @@ const preview=ref('')
 const error=ref('')
 const saving=ref(false)
 const voucher=ref({loading:false,message:'',ok:null,id:''})
+const attachment=ref(null)
 let pdfJsLoading=null
 const fmt=v=>(Number(v)||0).toFixed(2)
 const taxAmount=computed(()=>Math.round((Number(f.value.amount)||0)*(Number(f.value.taxRate)||0))/100)
@@ -83,20 +79,27 @@ function syncAmountFromLine(){
   if(qty>0&&price>=0)f.value.amount=Math.round(qty*price*100)/100
 }
 
+function validateInvoiceForm(){
+  if(!f.value.seller.trim())return '请填写销售方企业全称'
+  if(!f.value.num.trim())return '请填写发票号码'
+  if(!f.value.date)return '请选择开票日期'
+  const amount=Number(f.value.amount)
+  if(!Number.isFinite(amount)||amount<=0)return '请填写大于 0 的不含税金额'
+  const taxRate=Number(f.value.taxRate)
+  if(!Number.isFinite(taxRate)||taxRate<0)return '请选择正确的税率'
+  return ''
+}
+
 async function submit(){
-  error.value=''
-  if(!f.value.seller||!f.value.amount||!f.value.date)return
+  error.value=validateInvoiceForm()
+  if(error.value)return
   saving.value=true
   try{
     const r=await apiFetch('/api/invoices',{method:'POST',headers:hdr(),body:JSON.stringify({
-      seller:f.value.seller,
+      seller:f.value.seller.trim(),
       buyer:f.value.buyer,
       buyerTaxNo:f.value.buyerTaxNo,
-      buyerAddressPhone:f.value.buyerAddressPhone,
-      buyerBankAccount:f.value.buyerBankAccount,
       sellerTaxNo:f.value.sellerTaxNo,
-      sellerAddressPhone:f.value.sellerAddressPhone,
-      sellerBankAccount:f.value.sellerBankAccount,
       itemName:f.value.itemName,
       itemSpec:f.value.itemSpec,
       itemUnit:f.value.itemUnit,
@@ -109,8 +112,8 @@ async function submit(){
       totalAmountCn:totalAmountCn.value,
       category:f.value.cat,
       type:f.value.type,
-      invoiceCode:f.value.code,
-      invoiceNumber:f.value.num,
+      invoiceNumber:f.value.num.trim(),
+      attachment:attachment.value,
       notes:f.value.notes,
       date:f.value.date
     })})
@@ -208,11 +211,7 @@ function applyOcr(data){
   f.value.seller=data.seller||f.value.seller
   f.value.buyer=data.buyer||f.value.buyer
   f.value.buyerTaxNo=data.buyerTaxNo||data.buyer_tax_no||f.value.buyerTaxNo
-  f.value.buyerAddressPhone=data.buyerAddressPhone||data.buyer_address_phone||f.value.buyerAddressPhone
-  f.value.buyerBankAccount=data.buyerBankAccount||data.buyer_bank_account||f.value.buyerBankAccount
   f.value.sellerTaxNo=data.sellerTaxNo||data.seller_tax_no||f.value.sellerTaxNo
-  f.value.sellerAddressPhone=data.sellerAddressPhone||data.seller_address_phone||f.value.sellerAddressPhone
-  f.value.sellerBankAccount=data.sellerBankAccount||data.seller_bank_account||f.value.sellerBankAccount
   f.value.itemName=data.itemName||data.item_name||f.value.itemName
   f.value.itemSpec=data.itemSpec||data.item_spec||f.value.itemSpec
   f.value.itemUnit=data.itemUnit||data.item_unit||f.value.itemUnit
@@ -237,7 +236,6 @@ async function createVoucherDraft(){
       taxAmount:taxAmount.value,
       totalAmount:totalAmount.value,
       invoiceNumber:f.value.num,
-      invoiceCode:f.value.code,
       notes:f.value.notes
     })})
     const data=await r.json().catch(()=>({}))
@@ -254,8 +252,15 @@ async function recognize(e){
   if(!file)return
   ocr.value={loading:true,fileName:file.name,message:'正在处理...',ok:null}
   preview.value=''
+  attachment.value=null
   voucher.value={loading:false,message:'',ok:null,id:''}
   try{
+    if(file.size>10*1024*1024)throw new Error('附件不能超过 10MB')
+    attachment.value={
+      fileName:file.name,
+      contentType:file.type||'application/octet-stream',
+      data:await readAsDataUrl(file)
+    }
     const isPdf=file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf')
     if(isPdf){
       ocr.value={loading:true,fileName:file.name,message:'正在提取 PDF 文本...',ok:null}
@@ -308,12 +313,14 @@ async function recognize(e){
         </svg>
         <strong>{{ ocr.fileName || '上传发票图片或 PDF 自动识别' }}</strong>
         <span class="hint">识别结果会自动回填到下方表单，也可以直接手动填写</span>
+        <span class="hint">上传的原始文件会随发票保存，方便其他电脑查看。</span>
         <input type="file" class="hidden" accept="image/*,.pdf" @change="recognize">
       </label>
 
       <div class="upload-side">
         <div v-if="ocr.message" class="ocr-status" :style="{color: ocr.ok === false ? 'var(--danger)' : (ocr.ok ? 'var(--success)' : 'var(--accent)')}">{{ ocr.message }}</div>
         <img v-if="preview" :src="preview" alt="发票预览" class="invoice-preview">
+        <div v-if="attachment" class="hint">附件待保存：{{ attachment.fileName }}</div>
         <div v-if="ocr.ok" class="hint">已识别并填入表单，请核对后保存。</div>
       </div>
     </div>
@@ -329,19 +336,15 @@ async function recognize(e){
         </select>
       </div>
       <div class="form-group">
-        <label>发票代码</label>
-        <input class="input" v-model="f.code" maxlength="12" placeholder="12位发票代码">
-      </div>
-      <div class="form-group">
-        <label>发票号码</label>
+        <label class="required">发票号码</label>
         <input class="input" v-model="f.num" maxlength="12" placeholder="8-12位发票号码">
       </div>
       <div class="form-group">
-        <label>开票日期</label>
+        <label class="required">开票日期</label>
         <input class="input" v-model="f.date" type="date">
       </div>
       <div class="form-group">
-        <label>销售方</label>
+        <label class="required">销售方</label>
         <input class="input" v-model="f.seller" placeholder="销售方企业全称">
       </div>
       <div class="form-group">
@@ -355,22 +358,6 @@ async function recognize(e){
       <div class="form-group">
         <label>销售方纳税人识别号</label>
         <input class="input" v-model="f.sellerTaxNo" placeholder="统一社会信用代码">
-      </div>
-      <div class="form-group">
-        <label>购买方地址、电话</label>
-        <input class="input" v-model="f.buyerAddressPhone" placeholder="地址 电话">
-      </div>
-      <div class="form-group">
-        <label>销售方地址、电话</label>
-        <input class="input" v-model="f.sellerAddressPhone" placeholder="地址 电话">
-      </div>
-      <div class="form-group">
-        <label>购买方开户行及账号</label>
-        <input class="input" v-model="f.buyerBankAccount" placeholder="开户行 账号">
-      </div>
-      <div class="form-group">
-        <label>销售方开户行及账号</label>
-        <input class="input" v-model="f.sellerBankAccount" placeholder="开户行 账号">
       </div>
       <div class="form-group">
         <label>发票类别</label>
@@ -406,7 +393,7 @@ async function recognize(e){
         <input class="input" v-model.number="f.itemUnitPrice" type="number" step="0.000001" min="0" @input="syncAmountFromLine">
       </div>
       <div class="form-group">
-        <label>不含税金额（元）</label>
+        <label class="required">不含税金额（元）</label>
         <input class="input" v-model.number="f.amount" type="number" step="0.01" min="0" placeholder="0.00">
       </div>
       <div class="form-group">
@@ -424,6 +411,8 @@ async function recognize(e){
         <input class="input" v-model="f.notes" placeholder="用途说明、关联项目等">
       </div>
     </div>
+
+    <div class="required-note">带 * 的项目为必填，请核对识别结果后再保存。</div>
 
     <div class="card" style="margin-top:var(--space-lg);background:var(--bg);box-shadow:none;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -449,6 +438,8 @@ async function recognize(e){
 .upload-side{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg);padding:14px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:10px;min-height:170px}
 .ocr-status{text-align:center;font-size:14px}
 .invoice-preview{max-width:100%;max-height:220px;border-radius:var(--radius-md);display:block;object-fit:contain}
+.required::after{content:' *';color:var(--danger);font-weight:700}
+.required-note{margin-top:4px;color:var(--muted);font-size:12px}
 @media (max-width:900px){.unified-upload{grid-template-columns:1fr}.upload-side{min-height:auto}}
 </style>
 

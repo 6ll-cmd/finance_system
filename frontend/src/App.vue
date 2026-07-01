@@ -59,8 +59,44 @@ onMounted(() => {
     <nav class="sidebar" v-if="!isGuestPage()">
       <div class="sidebar-logo">
         <div class="logo-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="3"/><line x1="8" y1="3" x2="8" y2="21"/><line x1="8" y1="8" x2="20" y2="8"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/>
+          <svg width="24" height="24" viewBox="0 0 64 64" fill="none">
+            <defs>
+              <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#FFD700"/>
+                <stop offset="50%" style="stop-color:#FFA500"/>
+                <stop offset="100%" style="stop-color:#CD853F"/>
+              </linearGradient>
+              <linearGradient id="goldShine" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#FFF8DC"/>
+                <stop offset="50%" style="stop-color:#FFD700"/>
+                <stop offset="100%" style="stop-color:#FFA500"/>
+              </linearGradient>
+              <filter id="glow">
+                <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                <feMerge>
+                  <feMergeNode in="coloredBlur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+            <circle cx="32" cy="32" r="30" fill="url(#goldGradient)" filter="url(#glow)"/>
+            <rect x="18" y="20" width="28" height="24" rx="2" fill="#FFF8DC" stroke="url(#goldShine)" stroke-width="2"/>
+            <rect x="18" y="16" width="28" height="6" fill="url(#goldGradient)" rx="1"/>
+            <polygon points="18,16 20,20 24,16 26,20 30,16 32,20 36,16 38,20 42,16 44,20 46,16" fill="url(#goldGradient)"/>
+            <text x="32" y="19" font-family="Arial, sans-serif" font-size="4" font-weight="bold" fill="#8B4513" text-anchor="middle">INVOICE</text>
+            <line x1="22" y1="26" x2="42" y2="26" stroke="url(#goldGradient)" stroke-width="1.5"/>
+            <line x1="22" y1="30" x2="42" y2="30" stroke="url(#goldGradient)" stroke-width="1.5"/>
+            <line x1="22" y1="34" x2="42" y2="34" stroke="url(#goldGradient)" stroke-width="1.5"/>
+            <line x1="22" y1="38" x2="34" y2="38" stroke="url(#goldGradient)" stroke-width="1.5"/>
+            <rect x="36" y="36" width="6" height="6" rx="1" fill="url(#goldGradient)" stroke="#FFF8DC" stroke-width="1"/>
+            <text x="39" y="40" font-family="Arial, sans-serif" font-size="3" font-weight="bold" fill="#8B4513" text-anchor="middle">$</text>
+            <circle cx="22" cy="48" r="8" fill="url(#goldGradient)" filter="url(#glow)"/>
+            <circle cx="22" cy="48" r="5" fill="#FFF8DC"/>
+            <text x="22" y="51" font-family="Arial, sans-serif" font-size="6" font-weight="bold" fill="#8B4513" text-anchor="middle">$</text>
+            <circle cx="42" cy="48" r="6" fill="url(#goldGradient)" filter="url(#glow)"/>
+            <circle cx="42" cy="48" r="4" fill="#FFF8DC"/>
+            <text x="42" y="51" font-family="Arial, sans-serif" font-size="4" font-weight="bold" fill="#8B4513" text-anchor="middle">$</text>
+            <ellipse cx="32" cy="56" rx="12" ry="3" fill="url(#goldGradient)" opacity="0.6"/>
           </svg>
         </div>
         <div><h2>发票管家</h2></div>

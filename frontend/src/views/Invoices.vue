@@ -185,21 +185,23 @@ onMounted(load)
           <th>日期</th>
           <th>销售方</th>
           <th>购买方</th>
-          <th>金额</th>
+          <th>不含税金额</th>
+          <th>含税金额</th>
           <th>状态</th>
           <th>操作</th>
         </tr>
       </thead>
       <tbody>
         <tr v-if="loading">
-          <td colspan="8" class="empty">加载中...</td>
+          <td colspan="9" class="empty">加载中...</td>
         </tr>
         <tr v-else v-for="invoice in invoices" :key="invoice.id">
           <td><input type="checkbox" :value="invoice.id" v-model="selected" style="width:auto;margin:0"></td>
-          <td class="mono" style="color:var(--accent);cursor:pointer" @click="$router.push('/invoices/' + invoice.id)">{{ invoice.id }}</td>
+          <td class="mono" style="color:var(--accent);cursor:pointer" @click="$router.push('/invoices/' + invoice.id)">{{ invoice.invoiceNumber || invoice.id }}</td>
           <td>{{ invoice.date }}</td>
           <td>{{ invoice.seller }}</td>
           <td>{{ invoice.buyer || '-' }}</td>
+          <td class="num">¥{{ fmt(invoice.amount || invoice.amount_total) }}</td>
           <td class="num">¥{{ fmt(invoice.totalAmount || invoice.total_amount) }}</td>
           <td><span :class="'pill pill-' + invoice.status">{{ statusName(invoice.status) }}</span></td>
           <td>
@@ -209,7 +211,7 @@ onMounted(load)
           </td>
         </tr>
         <tr v-if="!loading && !invoices.length">
-          <td colspan="8" class="empty">暂无发票</td>
+          <td colspan="9" class="empty">暂无发票</td>
         </tr>
       </tbody>
     </table>

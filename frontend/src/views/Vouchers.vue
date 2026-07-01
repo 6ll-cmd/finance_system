@@ -8,6 +8,7 @@ const hdr = () => ({ Authorization: 'Bearer ' + token(), 'Content-Type': 'applic
 const vouchers = ref([])
 const loading = ref(false)
 const error = ref('')
+const actionMessage = ref('')
 const statusFilter = ref('all')
 
 const currentUser = computed(() => {
@@ -64,7 +65,7 @@ const flatRows = computed(() => vouchers.value.flatMap(voucher => {
   }))
 }))
 
-const exportHeaders = ['日期', '凭证号', '摘要', '科目编码', '科目名称', '借方金额', '贷方金额', '制单人', '审核人', '附件数', '备注']
+const exportHeaders = ['日期', '凭证号', '摘要', '科目编码', '科目名称', '借方金额', '贷方金额', '制单人', '负责人', '备注']
 const exportRows = computed(() => flatRows.value.map(row => [
   row.voucher.voucherDate || '',
   row.voucher.id || '',
@@ -74,8 +75,7 @@ const exportRows = computed(() => flatRows.value.map(row => [
   Number(row.entry.debitAmount) ? fmt(row.entry.debitAmount) : '',
   Number(row.entry.creditAmount) ? fmt(row.entry.creditAmount) : '',
   row.first ? currentUser.value : '',
-  '',
-  row.first ? '0' : '',
+  row.first ? (row.voucher.responsiblePerson || '') : '',
   row.first ? (row.voucher.notes || '') : ''
 ]))
 
@@ -181,11 +181,30 @@ async function doDelete(id, operationPassword) {
   }
   await reload()
 }
+async function doPostAll(operationPassword) {
+  error.value = ''
+  actionMessage.value = ''
+  const res = await apiFetch('/api/vouchers/post-all', {
+    method: 'POST',
+    headers: hdr(),
+    body: JSON.stringify({ operationPassword })
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    error.value = data.error || '一键过账失败'
+    return
+  }
+  actionMessage.value = `已过账 ${data.updated || 0} 张凭证`
+  await reload()
+}
 function change(id, status) {
   requireOpPassword(password => doChange(id, status, password), '过账/状态变更需要操作密码')
 }
 function del(id) {
   requireOpPassword(password => doDelete(id, password), '删除凭证需要操作密码')
+}
+function postAll() {
+  requireOpPassword(password => doPostAll(password), '一键过账全部草稿凭证需要操作密码')
 }
 </script>
 
@@ -202,11 +221,13 @@ function del(id) {
         <option value="posted">已过账</option>
         <option value="cancelled">已作废</option>
       </select>
+      <button class="btn btn-o" @click="postAll" :disabled="!vouchers.some(v => v.status === 'draft')">一键过账</button>
       <button class="btn btn-o" @click="exportCsv" :disabled="!flatRows.length">导出 CSV</button>
       <button class="btn btn-o" @click="exportExcel" :disabled="!flatRows.length">导出 Excel</button>
       <button class="btn btn-o" @click="$router.push('/vouchers/add')">新增凭证</button>
     </div>
   </div>
+  <div v-if="actionMessage" class="message ok">{{ actionMessage }}</div>
 
   <div class="ledger-shell">
     <table class="ledger-table">
@@ -220,21 +241,20 @@ function del(id) {
           <th class="num-col">借方金额</th>
           <th class="num-col">贷方金额</th>
           <th>制单人</th>
-          <th>审核人</th>
-          <th>附件数</th>
+          <th>负责人</th>
           <th>备注</th>
           <th>操作</th>
         </tr>
       </thead>
       <tbody>
         <tr v-if="loading">
-          <td colspan="12" class="empty">加载中...</td>
+          <td colspan="11" class="empty">加载中...</td>
         </tr>
         <tr v-else-if="error">
-          <td colspan="12" class="empty" style="color:var(--danger)">{{ error }}</td>
+          <td colspan="11" class="empty" style="color:var(--danger)">{{ error }}</td>
         </tr>
         <tr v-else-if="!flatRows.length">
-          <td colspan="12" class="empty">暂无凭证</td>
+          <td colspan="11" class="empty">暂无凭证</td>
         </tr>
         <tr v-for="row in flatRows" v-else :key="row.key">
           <td v-if="row.first" :rowspan="row.span" class="date-cell">{{ row.voucher.voucherDate }}</td>
@@ -248,8 +268,7 @@ function del(id) {
           <td class="num num-col">{{ Number(row.entry.debitAmount) ? fmt(row.entry.debitAmount) : '' }}</td>
           <td class="num num-col">{{ Number(row.entry.creditAmount) ? fmt(row.entry.creditAmount) : '' }}</td>
           <td v-if="row.first" :rowspan="row.span">{{ currentUser }}</td>
-          <td v-if="row.first" :rowspan="row.span"></td>
-          <td v-if="row.first" :rowspan="row.span" class="num">0</td>
+          <td v-if="row.first" :rowspan="row.span">{{ row.voucher.responsiblePerson || '' }}</td>
           <td v-if="row.first" :rowspan="row.span">{{ row.voucher.notes || '' }}</td>
           <td v-if="row.first" :rowspan="row.span" class="actions-cell">
             <button class="btn btn-s" @click="change(row.voucher.id, 'posted')" :disabled="row.voucher.status === 'posted'">过账</button>
@@ -267,6 +286,13 @@ function del(id) {
 .toolbar-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+.message {
+  margin: -6px 0 12px;
+  font-size: 13px;
+}
+.message.ok {
+  color: var(--success);
 }
 .ledger-shell {
   overflow: auto;

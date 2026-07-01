@@ -20,17 +20,84 @@ const report = ref({
 })
 const loading = ref(false)
 const error = ref('')
+const notice = ref('三大报表基于已过账凭证自动计算，属于简化会计口径，正式申报或审计请人工复核。')
 
 const finReports = [
-  { key: 'balance', name: '资产负债表', desc: '取已过账凭证，反映某一日期财务状况', icon: 'BS', path: '/reports/balance-sheet' },
-  { key: 'income', name: '利润表', desc: '取已过账凭证，反映一定期间经营成果', icon: 'IS', path: '/reports/income-statement' },
-  { key: 'cash', name: '现金流量表', desc: '取已过账凭证，反映一定期间现金流转', icon: 'CF', path: '/reports/cash-flow' }
+  { key: 'balance', name: '资产负债表', desc: '反映某一日期的资产、负债和所有者权益', icon: 'BS', path: '/reports/balance-sheet' },
+  { key: 'income', name: '利润表', desc: '反映一段期间内的经营成果', icon: 'IS', path: '/reports/income-statement' },
+  { key: 'cash', name: '现金流量表', desc: '简化估算现金净增加和活动分类', icon: 'CF', path: '/reports/cash-flow' }
 ]
 
 const money = value => (Number(value) || 0).toLocaleString('zh-CN', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
 })
+
+function htmlEscape(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function downloadExcel(sheets, filename) {
+  const html = '\ufeff<html><head><meta charset="UTF-8"></head><body>' + sheets.map(sheet => {
+    const rows = sheet.rows.map((row, index) => {
+      const cell = index === 0 ? 'th' : 'td'
+      return `<tr>${row.map(value => `<${cell}>${htmlEscape(value)}</${cell}>`).join('')}</tr>`
+    }).join('')
+    return `<h3>${htmlEscape(sheet.name)}</h3><table border="1">${rows}</table>`
+  }).join('<br>') + '</body></html>'
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function exportExcel() {
+  const voucher = report.value.voucherSummary
+  downloadExcel([
+    {
+      name: '凭证统计',
+      rows: [
+        ['项目', '数量', '金额'],
+        ['凭证总数', voucher.total || 0, money(voucher.totalAmount)],
+        ['草稿', voucher.statusCounts.draft || 0, money(voucher.statusAmounts.draft)],
+        ['已过账', voucher.statusCounts.posted || 0, money(voucher.postedAmount)],
+        ['已作废', voucher.statusCounts.cancelled || 0, money(voucher.statusAmounts.cancelled)]
+      ]
+    },
+    {
+      name: '发票月度趋势',
+      rows: [
+        ['月份', '数量', '不含税', '税额', '含税'],
+        ...report.value.monthly.map(row => [row.month, row.count, money(row.amount), money(row.taxAmount), money(row.totalAmount)])
+      ]
+    },
+    {
+      name: '发票类别分布',
+      rows: [
+        ['类别', '数量', '金额'],
+        ...report.value.categories.map(row => [row.name, row.count, money(row.totalAmount)])
+      ]
+    },
+    {
+      name: '发票状态分布',
+      rows: [
+        ['状态', '数量'],
+        ['待报销', report.value.statusCounts.pending || 0],
+        ['已报销', report.value.statusCounts.reimbursed || 0],
+        ['已退回', report.value.statusCounts.rejected || 0]
+      ]
+    }
+  ], `报表中心-${new Date().toISOString().slice(0, 10)}.xls`)
+}
 
 const pick = (row, ...keys) => {
   for (const key of keys) {
@@ -57,9 +124,14 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const r = await apiFetch('/api/reports', { headers: hdr() })
-    const raw = await r.json().catch(() => ({}))
-    if (!r.ok) throw new Error(raw.error || '报表数据加载失败')
+    const [reportsRes, metaRes] = await Promise.all([
+      apiFetch('/api/reports', { headers: hdr() }),
+      apiFetch('/api/financial-reports/meta', { headers: hdr() })
+    ])
+    const raw = await reportsRes.json().catch(() => ({}))
+    if (!reportsRes.ok) throw new Error(raw.error || '报表数据加载失败')
+    const meta = await metaRes.json().catch(() => ({}))
+    if (meta.notice) notice.value = meta.notice
     const data = normalizeReport(raw)
     report.value = {
       ...report.value,
@@ -93,9 +165,13 @@ onMounted(load)
       <h1 style="margin-bottom:4px">报表中心</h1>
       <div class="hint">发票统计按发票列表全量数据；三大财务报表按已过账凭证取数。</div>
     </div>
-    <button class="btn btn-o" @click="load" :disabled="loading">刷新</button>
+    <div class="flex">
+      <button class="btn btn-o" @click="exportExcel">导出 Excel</button>
+      <button class="btn btn-o" @click="load" :disabled="loading">刷新</button>
+    </div>
   </div>
 
+  <div class="notice-band">{{ notice }}</div>
   <div v-if="error" class="card" style="color:var(--danger)">{{ error }}</div>
 
   <h2 style="margin-bottom:10px">财务三大报表</h2>
@@ -152,9 +228,7 @@ onMounted(load)
   <div class="card">
     <h3>类别分布</h3>
     <table>
-      <thead>
-        <tr><th>类别</th><th class="num">数量</th><th class="num">金额</th></tr>
-      </thead>
+      <thead><tr><th>类别</th><th class="num">数量</th><th class="num">金额</th></tr></thead>
       <tbody>
         <tr v-for="c in report.categories" :key="c.category">
           <td>{{ c.name }}</td>
@@ -176,6 +250,7 @@ onMounted(load)
 </template>
 
 <style scoped>
+.notice-band{border:1px solid var(--border);background:var(--bg);border-radius:var(--radius-md);padding:10px 12px;color:var(--muted);font-size:13px;margin-bottom:16px}
 .report-tile{display:flex;align-items:center;gap:14px;cursor:pointer;transition:all .15s;padding:18px 22px}
 .report-tile:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 4px 12px rgba(91,95,199,.15)}
 .report-icon{width:44px;height:44px;background:var(--accent);color:var(--on-accent);border-radius:var(--radius-md);display:grid;place-items:center;font-weight:700;font-size:14px;flex-shrink:0}

@@ -16,10 +16,10 @@ public class JwtUtil {
     private final long accessExpiration;
     private final long refreshExpiration;
 
-    public JwtUtil(@Value("${jwt.secret}") String secret,
+    public JwtUtil(JwtSecretProvider secretProvider,
                    @Value("${jwt.access-token-expiration}") long accessExpiration,
                    @Value("${jwt.refresh-token-expiration}") long refreshExpiration) {
-        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        this.key = Keys.hmacShaKeyFor(secretProvider.secret().getBytes(StandardCharsets.UTF_8));
         this.accessExpiration = accessExpiration;
         this.refreshExpiration = refreshExpiration;
     }
@@ -28,6 +28,7 @@ public class JwtUtil {
     public String generateAccessToken(String userId, String username, String role) {
         return Jwts.builder()
                 .subject(userId)
+                .claim("type", "access")
                 .claim("username", username)
                 .claim("role", role)
                 .issuedAt(new Date())
@@ -62,6 +63,18 @@ public class JwtUtil {
         try {
             parseClaims(token);
             return true;
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    public boolean isAccessToken(Claims claims) {
+        return "access".equals(claims.get("type", String.class));
+    }
+
+    public boolean isRefreshToken(String token) {
+        try {
+            return "refresh".equals(parseClaims(token).get("type", String.class));
         } catch (JwtException | IllegalArgumentException e) {
             return false;
         }

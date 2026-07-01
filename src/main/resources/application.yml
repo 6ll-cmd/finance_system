@@ -24,7 +24,7 @@ mybatis-plus:
   type-handlers-package: com.symbiosis.finance.config
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
   global-config:
     db-config:
       id-type: auto
@@ -46,4 +46,4 @@ ai:
 
 logging:
   level:
-    com.symbiosis.finance: DEBUG
+    com.symbiosis.finance: INFO

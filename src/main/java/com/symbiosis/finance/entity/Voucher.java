@@ -16,6 +16,7 @@ public class Voucher {
     private BigDecimal totalAmount;
     private String status;           // draft | posted | cancelled
     private String notes;
+    private String responsiblePerson;
     private UUID userId;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
@@ -41,6 +42,9 @@ public class Voucher {
 
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+
+    public String getResponsiblePerson() { return responsiblePerson; }
+    public void setResponsiblePerson(String responsiblePerson) { this.responsiblePerson = responsiblePerson; }
 
     public UUID getUserId() { return userId; }
     public void setUserId(UUID userId) { this.userId = userId; }

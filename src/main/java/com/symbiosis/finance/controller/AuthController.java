@@ -12,7 +12,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.beans.factory.annotation.Value;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -25,9 +24,6 @@ public class AuthController {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
-
-    @Value("${jwt.secret}")
-    private String jwtSecret;
 
     public AuthController(UserMapper userMapper, PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
         this.userMapper = userMapper;
@@ -134,7 +130,7 @@ public class AuthController {
 
     @PostMapping("/refresh")
     public ResponseEntity<?> refresh(@Valid @RequestBody RefreshRequest req) {
-        if (!jwtUtil.validateToken(req.refreshToken)) {
+        if (!jwtUtil.validateToken(req.refreshToken) || !jwtUtil.isRefreshToken(req.refreshToken)) {
             return ResponseEntity.status(401).body(Map.of("error", "refresh token invalid or expired"));
         }
         String userId = jwtUtil.getUserId(req.refreshToken);
@@ -168,7 +164,7 @@ public class AuthController {
             return ResponseEntity.status(403).body(Map.of("error", "login password incorrect"));
         }
         user.setOperationPassword(passwordEncoder.encode(req.newPassword));
-        user.setOperationPasswordHint(encryptHint(req.newPassword));
+        user.setOperationPasswordHint(null);
         userMapper.updateById(user);
         return ResponseEntity.ok(Map.of("ok", true));
     }
@@ -200,7 +196,7 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("set", set));
     }
 
-    // POST /api/operation-password/reveal - return the plaintext op password after verifying login password
+    // POST /api/operation-password/reveal - plaintext operation passwords are not recoverable.
     public static class RevealRequest {
         @NotBlank public String loginPassword;
     }
@@ -213,45 +209,7 @@ public class AuthController {
         if (!passwordEncoder.matches(req.loginPassword, user.getPassword())) {
             return ResponseEntity.status(403).body(Map.of("error", "login password incorrect"));
         }
-        if (user.getOperationPasswordHint() == null || user.getOperationPasswordHint().isEmpty()) {
-            return ResponseEntity.status(404).body(Map.of("error", "operation password not set"));
-        }
-        String plain = decryptHint(user.getOperationPasswordHint());
-        return ResponseEntity.ok(Map.of("password", plain != null ? plain : ""));
-    }
-
-    // AES encrypt/decrypt for the reversible hint. Key derived from the configured jwt secret.
-    private String encryptHint(String plain) {
-        try {
-            javax.crypto.spec.SecretKeySpec key = hintKey();
-            javax.crypto.Cipher c = javax.crypto.Cipher.getInstance("AES");
-            c.init(javax.crypto.Cipher.ENCRYPT_MODE, key);
-            byte[] enc = c.doFinal(plain.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            return java.util.Base64.getEncoder().encodeToString(enc);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private String decryptHint(String b64) {
-        try {
-            javax.crypto.spec.SecretKeySpec key = hintKey();
-            javax.crypto.Cipher c = javax.crypto.Cipher.getInstance("AES");
-            c.init(javax.crypto.Cipher.DECRYPT_MODE, key);
-            byte[] dec = c.doFinal(java.util.Base64.getDecoder().decode(b64));
-            return new String(dec, java.nio.charset.StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private javax.crypto.spec.SecretKeySpec hintKey() {
-        String s = jwtSecret;
-        if (s == null || s.length() < 16) s = "change-me-in-production-use-256-bit-minimum";
-        byte[] k = s.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        byte[] key16 = new byte[16];
-        System.arraycopy(k, 0, key16, 0, Math.min(16, k.length));
-        return new javax.crypto.spec.SecretKeySpec(key16, "AES");
+        return ResponseEntity.status(410).body(Map.of("error", "operation password cannot be recovered; please reset it"));
     }
 
 }
