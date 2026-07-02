@@ -11,8 +11,8 @@ spring:
     resources:
       static-locations: classpath:/static/
   datasource:
-    url: jdbc:postgresql://localhost:5432/finance_db?stringtype=unspecified
-    username: finance_user
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:55432/finance_db?stringtype=unspecified}
+    username: ${SPRING_DATASOURCE_USERNAME:finance_user}
     password: ${DB_PASSWORD:finance_pass}
     driver-class-name: org.postgresql.Driver
   flyway:
